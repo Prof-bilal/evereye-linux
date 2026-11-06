@@ -1,0 +1,6 @@
+ARG BASE_IMAGE=opensuse/leap:16.0
+FROM ${BASE_IMAGE}
+RUN zypper --non-interactive refresh && zypper --non-interactive install --no-recommends \
+    gcc-c++ make cmake ninja qt6-base-devel qt6-wayland-devel upower dbus-1 dbus-1-daemon glib2-tools python3 \
+    desktop-file-utils appstream-glib xorg-x11-server-Xvfb xauth weston dejavu-fonts file binutils rpm-build \
+    && zypper clean --all

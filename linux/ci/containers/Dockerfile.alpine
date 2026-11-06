@@ -1,0 +1,5 @@
+ARG BASE_IMAGE=alpine:latest
+FROM ${BASE_IMAGE}
+RUN apk add --no-cache bash build-base linux-headers cmake ninja qt6-qtbase-dev qt6-qtwayland-dev \
+    upower dbus dbus-x11 glib python3 desktop-file-utils appstream xvfb xvfb-run xauth \
+    weston weston-backend-headless weston-shell-desktop font-dejavu file binutils

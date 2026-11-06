@@ -1,0 +1,29 @@
+{
+  "app-id": "io.github.ProfBilal.EverEye",
+  "runtime": "org.kde.Platform",
+  "runtime-version": "6.10",
+  "sdk": "org.kde.Sdk",
+  "command": "evereye",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--device=dri",
+    "--own-name=io.github.ProfBilal.Insomnia1",
+    "--own-name=io.github.ProfBilal.Insomnia1.UI",
+    "--talk-name=org.freedesktop.Notifications",
+    "--talk-name=org.kde.StatusNotifierWatcher",
+    "--system-talk-name=org.freedesktop.login1",
+    "--system-talk-name=org.freedesktop.UPower",
+    "--system-talk-name=org.freedesktop.UPower.PowerProfiles",
+    "--system-talk-name=net.hadess.PowerProfiles"
+  ],
+  "modules": [
+    {
+      "name": "evereye",
+      "buildsystem": "cmake-ninja",
+      "config-opts": ["-DBUILD_TESTING=OFF", "-DEVEREYE_INSTALL_USER_SERVICE=OFF", "-DCMAKE_BUILD_TYPE=Release"],
+      "sources": [{"type": "dir", "path": "../..", "skip": [".git", ".flatpak-builder", ".cache", "build", "build-*", "dist", "test-results", "__pycache__"]}]
+    }
+  ]
+}

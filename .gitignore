@@ -1,0 +1,22 @@
+# Generated native build and test output
+linux/build/
+linux/build-tests/
+linux/build-fake-services/
+linux/dist/pkg/
+linux/dist/src/
+linux/dist/stage/
+linux/test-results/
+
+# Landing build and dependency output
+landing/node_modules/
+landing/.next/
+landing/out/
+landing/test-results/
+landing/playwright-report/
+landing/*.tsbuildinfo
+
+# Local editor and OS files
+.DS_Store
+*.swp
+**/__pycache__/
+*.pyc

@@ -1,0 +1,43 @@
+name: EverEye portability and E2E
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['linux/**', '.github/workflows/evereye-portability.yml']
+  push:
+    paths: ['linux/**', '.github/workflows/evereye-portability.yml']
+permissions:
+  contents: read
+jobs:
+  distro:
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        target: [ubuntu-22.04, ubuntu-24.04, ubuntu-26.04, debian-12, debian-13, fedora, rocky-9, arch, opensuse-leap, alpine-musl]
+        exclude:
+          - runner: ubuntu-24.04-arm
+            target: arch
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Build, install, exercise and remove native package
+        run: python3 linux/scripts/test-distros.py --targets '${{ matrix.target }}'
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: evereye-${{ matrix.runner }}-${{ matrix.target }}
+          retention-days: 7
+          path: |
+            linux/test-results/distro-matrix/**/*.json
+            linux/test-results/distro-matrix/**/*.log
+            linux/test-results/distro-matrix/**/*.txt
+            linux/test-results/distro-matrix/**/*.xml
+            linux/test-results/distro-matrix/**/*.png
+            linux/test-results/distro-matrix/**/*.deb
+            linux/test-results/distro-matrix/**/*.rpm
+            linux/test-results/distro-matrix/**/*.pkg.tar.zst
+            linux/test-results/distro-matrix/**/*.tar.gz

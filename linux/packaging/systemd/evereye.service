@@ -1,0 +1,18 @@
+[Unit]
+Description=EverEye session controller
+Documentation=https://github.com/Prof-bilal/Insomnia
+PartOf=graphical-session.target
+
+[Service]
+Type=dbus
+BusName=io.github.ProfBilal.Insomnia1
+ExecStart=/usr/bin/evereye --daemon
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=5
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,7 @@
+ARG BASE_IMAGE=rockylinux:9
+FROM ${BASE_IMAGE}
+RUN dnf install -y dnf-plugins-core epel-release && dnf config-manager --set-enabled crb && \
+    dnf install -y gcc-c++ make cmake ninja-build qt6-qtbase-devel qt6-qtwayland-devel \
+    dbus \
+    upower dbus-daemon glib2 python3 desktop-file-utils appstream xorg-x11-server-Xvfb xorg-x11-xauth \
+    weston dejavu-sans-fonts file binutils rpm-build && dnf clean all

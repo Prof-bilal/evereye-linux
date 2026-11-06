@@ -1,0 +1,4 @@
+ARG BASE_IMAGE=archlinux:base
+FROM ${BASE_IMAGE}
+RUN pacman -Syu --noconfirm --needed base-devel cmake ninja qt6-base qt6-wayland upower dbus glib2 python \
+    desktop-file-utils appstream xorg-server-xvfb xorg-xauth weston ttf-dejavu file binutils

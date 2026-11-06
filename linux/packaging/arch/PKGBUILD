@@ -1,0 +1,38 @@
+pkgname=evereye
+pkgver=0.4.0
+pkgrel=1
+provides=('insomnia-linux')
+conflicts=('insomnia-linux')
+pkgdesc='Native timed awake sessions with battery protection'
+arch=('x86_64' 'aarch64')
+url='https://github.com/Prof-bilal/Insomnia'
+license=('MIT')
+depends=('qt6-base' 'dbus' 'upower')
+makedepends=('gcc' 'make')
+optdepends=('power-profiles-daemon: temporary power-saver holds'
+            'systemd: logind provider'
+            'elogind: alternative logind provider on non-systemd systems')
+source=("evereye-${pkgver}-source.tar.gz")
+# scripts/package.py replaces this marker in dist/PKGBUILD with the source digest.
+sha256sums=('SOURCE_ARCHIVE_SHA256')
+
+build() {
+    cd "$srcdir/evereye-$pkgver"
+    mkdir -p build
+    cd build
+    qmake6 ../evereye.pro
+    make
+}
+
+check() {
+    cd "$srcdir/evereye-$pkgver"
+    bash scripts/test.sh
+}
+
+package() {
+    cd "$srcdir/evereye-$pkgver"
+    make -C build INSTALL_ROOT="$pkgdir" install
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 THIRD_PARTY_NOTICES.md "$pkgdir/usr/share/doc/$pkgname/THIRD_PARTY_NOTICES.md"
+}

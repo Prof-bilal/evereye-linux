@@ -1,0 +1,6 @@
+ARG BASE_IMAGE=ubuntu:22.04
+FROM ${BASE_IMAGE}
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    build-essential cmake ninja-build qt6-base-dev qt6-base-dev-tools qmake6 qt6-wayland qt6-wayland-dev \
+    libgl1-mesa-dev upower dbus dbus-x11 libglib2.0-bin python3 desktop-file-utils appstream \
+    xvfb weston xauth fonts-dejavu-core ca-certificates file binutils dpkg-dev && rm -rf /var/lib/apt/lists/*

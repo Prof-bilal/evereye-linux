@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.ProfBilal.EverEye</id>
+  <name>EverEye</name>
+  <summary>Keep your Linux work awake with a bounded timer</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer><name>EverEye contributors</name></developer>
+  <url type="homepage">https://github.com/Prof-bilal/Insomnia</url>
+  <description>
+    <p>Keep long-running tasks moving with timed awake sessions, optional lid-switch inhibition, battery safeguards and temporary power-saver requests.</p>
+    <p>EverEye provides a native dashboard, tray and command line. Sessions end automatically and interrupted sessions release their holds. A logind-compatible service, a user D-Bus session and supported Linux process supervision are required. UPower provides battery protection.</p>
+  </description>
+  <launchable type="desktop-id">io.github.ProfBilal.EverEye.desktop</launchable>
+  <icon type="stock">evereye</icon>
+  <provides><binary>evereye</binary></provides>
+  <categories><category>Utility</category></categories>
+  <content_rating type="oars-1.1"/>
+  <supports><control>pointing</control><control>keyboard</control></supports>
+  <releases><release version="0.4.0" date="2026-11-06"/></releases>
+</component>

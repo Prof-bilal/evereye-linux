@@ -1,0 +1,6 @@
+/build/
+/build-tests/
+/build-fake-services/
+/dist/
+/test-results/
+/CMakeUserPresets.json
