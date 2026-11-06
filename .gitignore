@@ -20,3 +20,4 @@ landing/*.tsbuildinfo
 *.swp
 **/__pycache__/
 *.pyc
+.shiki/
