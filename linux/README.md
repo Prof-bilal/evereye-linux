@@ -116,6 +116,8 @@ The workspace build keeps `build/insomnia-linux` as a compatibility symlink to `
 
 For a system package, the controller unit is available as `evereye.service`. Enabling it is optional: the app can launch its controller directly. Do not run both copies from different binary versions. Before removing the app, run `evereye shutdown`; normal state can be retained for settings/history. The journal is not a macOS-compatible migration format.
 
+To install the verified build for your user without using a terminal afterward, run `./scripts/install-user.sh`. It copies the binary to `~/.local/bin`, installs the application-menu launcher and icon under `~/.local/share`, and does not require root or change global power settings. Remove it with `./scripts/uninstall-user.sh`.
+
 See [architecture](docs/ARCHITECTURE.md), [validation and hardware checklist](docs/VALIDATION.md), and [third-party notices](THIRD_PARTY_NOTICES.md).
 
 For a short supervised lid test on your own machine, run `./scripts/test-lid.sh`. It starts a one-minute session with lid inhibition and power saver disabled if needed, measures execution gaps for 40 seconds, prints progress and the result, and saves `test-results/lid-check.json`. Close the lid for about 20 seconds during the measurement. The script preserves an already-active session that has enough time remaining and never ends it early.

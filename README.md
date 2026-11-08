@@ -1,32 +1,98 @@
-# EverEye / OpenEye workspace
+# EverEye for Linux
 
-EverEye, the native Linux edition is in [linux/](linux/README.md). It provides timed awake sessions, lid-switch inhibition, battery cutoff, optional power-saver holds, a Qt window/tray, CLI controls, crash recovery, and an independent deadline supervisor.
+EverEye is a native Qt desktop utility for keeping a Linux workstation awake during bounded work sessions. Set a deadline for a build, download, QEMU VM, render, or AI agent, then step away. The session controller uses Linux power services, releases its inhibitors on expiry or interruption, and keeps your normal power policy in charge outside the session.
 
-Run the locally built application:
+**Website:** [evereye-linux.vercel.app](https://evereye-linux.vercel.app/)  
+**Latest release:** [EverEye 0.4.0](https://github.com/Prof-bilal/evereye-linux/releases/tag/v0.4.0)  
+**License:** MIT
+
+![EverEye active session dashboard](docs/assets/evereye-ui-active.png)
+
+## Install the desktop app
+
+For a tested x86_64 Linux desktop, download `evereye-0.4.0-linux-x86_64.tar.gz` from the [release page](https://github.com/Prof-bilal/evereye-linux/releases/tag/v0.4.0), extract it, and run the installer once:
 
 ```bash
-/home/abullah/Projects/OpenEye/linux/build/evereye
+tar -xzf evereye-0.4.0-linux-x86_64.tar.gz
+cd evereye-0.4.0-linux-x86_64
+./install-user.sh
 ```
 
-Build and test from source:
+The installer copies EverEye to `~/.local/bin`, installs the application-menu entry and icon, and does not require root. After that, open **EverEye** from your desktop Applications menu. To remove the user installation:
+
+```bash
+./uninstall-user.sh
+```
+
+The x86_64 archive is linked to its build machine's Qt and libc ABI. It is not a universal Linux binary. Use the source build below when your distribution or architecture differs.
+
+## Build from source
+
+Requirements: a C++20 compiler, GNU make, Qt 6.2 or newer with qmake6 and Qt DBus, UPower, a user D-Bus session, and logind or elogind.
+
+```bash
+git clone https://github.com/Prof-bilal/evereye-linux.git
+cd evereye-linux/linux
+./scripts/build.sh
+./scripts/install-user.sh
+```
+
+The source archive is also attached to the [0.4.0 release](https://github.com/Prof-bilal/evereye-linux/releases/tag/v0.4.0). Distribution dependency commands and packaging notes are in [linux/README.md](linux/README.md).
+
+## How it works
+
+- **Bounded sessions:** choose seconds, minutes, hours, or days; sessions run from one minute to 30 days.
+- **Tray and dashboard controls:** start, extend, inspect, or end a session without keeping a terminal open.
+- **Lid handling:** optionally inhibit lid-triggered suspend when the desktop and hardware honor the Linux power request.
+- **Battery safeguards:** end below a configured battery floor and optionally request a temporary power-saver profile.
+- **Crash recovery:** the controller owns the power descriptors, an independent supervisor enforces the deadline, and kernel cleanup releases descriptors after a crash.
+- **Normal screen locking:** EverEye does not request screen-lock idle inhibition.
+
+EverEye does not provide thermal protection, change global power policy, or guarantee behavior against firmware or desktop rules that force suspend. Test closed-lid behavior on your own hardware before relying on it.
+
+## Command-line controls
+
+```bash
+evereye start 2h30m
+evereye status
+evereye extend 15m
+evereye end
+evereye doctor
+```
+
+Use `evereye shutdown` before removing an installed copy. CLI responses are JSON and failed operations return a non-zero exit code. Running `evereye` without an action opens the controls and tray.
+
+## Validation
+
+The 0.4.0 release validation covered native regression tests, private D-Bus integration, a physical lid workload check, landing-page browser tests, release artifact checksums, and a ten-target native x86_64 distro matrix. Evidence and limitations are documented in:
+
+- [Beta release notes](linux/docs/BETA-RELEASE.md)
+- [Validation record](linux/docs/VALIDATION.md)
+- [Architecture](linux/docs/ARCHITECTURE.md)
+- [UI and bug-fix review](linux/docs/UI-AND-BUGFIX-REVIEW.md)
+- [Security policy](SECURITY.md)
+
+To run the native checks locally:
 
 ```bash
 cd linux
-./scripts/build.sh
 ./scripts/test.sh
 ./scripts/test-dbus.sh
+./scripts/test-lid.sh
+python3 scripts/audit-beta.py
 ```
 
-EverEye 0.4.0 is being prepared as a public beta. The native Linux build, landing page, source archive, and browser checks are ready; the release remains explicitly beta because the exact release revision still needs a fresh distro matrix and physical desktop check, while ARM64 and universal bundles remain outside the support claim. See the [native validation record](linux/docs/VALIDATION.md) and [beta release notes](linux/docs/BETA-RELEASE.md).
+The broader portability audit remains separate from the public x86_64 release because ARM64, AppImage, Flatpak, and other universal formats require their own native runtime evidence.
 
-| Location | Contents |
+## Project map
+
+| Path | Purpose |
 |---|---|
-| [Linux README](linux/README.md) | Usage, build, CLI, recovery and packaging |
-| [Architecture](linux/docs/ARCHITECTURE.md) | Process ownership, D-Bus boundary and state rules |
-| [Validation](linux/docs/VALIDATION.md) | Test evidence, limitations and hardware checklist |
-| `linux/dist/` | Native/source archives, checksums, and generated Arch PKGBUILD |
-| [Research](research/INSOMNIA-LINUX-RESEARCH.md) | macOS architecture audit and Linux component comparison |
-| [macOS reference](Insomnia/README.md) | Hash-verified upstream text snapshot |
-| [Source manifest](insomnia-source-manifest.json) | Upstream commit/file provenance and acquisition limitations |
+| [linux/](linux/README.md) | Native Linux application, build, packaging, and operations guide |
+| [landing/](landing/README.md) | Public EverEye landing page |
+| [linux/src/](linux/src/) | Qt UI, controller, D-Bus integration, supervision, and power policy |
+| [linux/scripts/](linux/scripts/) | Build, install, package, integration, and portability checks |
+| [linux/dist/](linux/dist/) | Generated release archives and SHA-256 manifest |
+| [docs/assets/](docs/assets/) | README screenshots |
 
-The macOS reference is a connector-retrieved text snapshot because terminal GitHub DNS access failed. It has no Git history and omits the two binary app icons. The Linux edition is implemented independently against Linux services; deferred macOS integrations are listed explicitly in its README.
+The original macOS reference snapshot is kept under [Insomnia/](Insomnia/) for architecture comparison. The Linux implementation is independent and documents deferred macOS-only integrations in [linux/README.md](linux/README.md).

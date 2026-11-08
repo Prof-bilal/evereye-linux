@@ -3,6 +3,7 @@ Type=Application
 Name=EverEye
 Comment=Timed awake sessions with battery protection
 Exec=evereye
+TryExec=evereye
 Icon=io.github.ProfBilal.EverEye
 Terminal=false
 Categories=Utility;

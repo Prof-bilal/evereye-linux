@@ -28,8 +28,10 @@ source_hash = hashlib.sha256(source_archive.read_bytes()).hexdigest()
 binary_archive = dist / f"{binary_name}.tar.gz"
 with reproducible_archive(binary_archive) as (archive, normalize):
     archive.add(binary, arcname=f"{binary_name}/evereye", filter=normalize)
-    for name in ["README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "assets/io.github.ProfBilal.EverEye.svg", *[str(p.relative_to(root)) for p in sorted((root / "docs").glob("*.md"))]]:
+    for name in ["README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "assets/io.github.ProfBilal.EverEye.svg", "packaging/io.github.ProfBilal.EverEye.desktop", *[str(p.relative_to(root)) for p in sorted((root / "docs").glob("*.md"))]]:
         archive.add(root / name, arcname=f"{binary_name}/{name}", filter=normalize)
+    archive.add(root / "scripts/install-user.sh", arcname=f"{binary_name}/install-user.sh", filter=normalize)
+    archive.add(root / "scripts/uninstall-user.sh", arcname=f"{binary_name}/uninstall-user.sh", filter=normalize)
 manifest = []
 for path in [source_archive, binary_archive, dist / "PKGBUILD"]:
     manifest.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}")
