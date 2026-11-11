@@ -56,12 +56,12 @@ def command(*args, ok=True):
     return data
 
 
-def until(check, seconds=5):
+def until(check, seconds=5, interval=0.1):
     end = time.monotonic() + seconds
     while time.monotonic() < end:
         if check():
             return
-        time.sleep(0.1)
+        time.sleep(interval)
     raise AssertionError("Timed out waiting for condition")
 
 
@@ -141,9 +141,12 @@ with tempfile.TemporaryDirectory(prefix="insomnia-integration-") as root:
         until(controller_ready)
         assert not command("status")["active"], "interrupted session silently resumed"
         command("start", "60s")
-        until(lambda: not command("status")["active"], seconds=65)
-        until(lambda: prop(LOGIN, "ActiveLocks") == 0)
-        assert daemon.poll() is None, "normal expiry should not kill the controller"
+        # Poll gently across the whole session: spawning the CLI 10x/second for
+        # a minute can starve the controller's own timer on a loaded CI runner,
+        # which the deadline watchdog would then enforce with SIGKILL.
+        until(lambda: not command("status")["active"], seconds=65, interval=0.5)
+        until(lambda: prop(LOGIN, "ActiveLocks") == 0, interval=0.25)
+        assert daemon.poll() is None, f"normal expiry should not kill the controller (rc={daemon.returncode})"
         command("shutdown")
         daemon.wait(timeout=5)
         print(f"PASS ({options.profile_api} profile API): real private-bus start/extend/end, UI replacement, denied inhibition, profile holds/manual override, battery cutoff, crash FD release, reconciliation, and 60-second expiry")
