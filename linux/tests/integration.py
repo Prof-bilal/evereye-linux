@@ -24,6 +24,8 @@ assert os.environ.get("DBUS_SESSION_BUS_ADDRESS"), "private session bus required
 assert 'EVEREYE_PRIVATE_BUS_PARENT' in os.environ and os.environ['EVEREYE_PRIVATE_BUS_PARENT'] != os.environ['DBUS_SESSION_BUS_ADDRESS'], 'Use scripts/private-bus-run.py; refusing a possibly live user bus' 
 env = os.environ.copy()
 env["DBUS_SYSTEM_BUS_ADDRESS"] = env["DBUS_SESSION_BUS_ADDRESS"]
+# Surface controller diagnostics even when stderr is not a console.
+env["QT_FORCE_STDERR_LOGGING"] = "1"
 LOGIN = ("org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager")
 BATTERY = ("org.freedesktop.UPower", "/org/freedesktop/UPower/devices/battery_BAT0", "org.freedesktop.UPower.Device")
 UPOWER = ("org.freedesktop.UPower", "/org/freedesktop/UPower", "org.freedesktop.UPower")
@@ -70,6 +72,30 @@ def controller_ready():
         "--object-path", "/io/github/ProfBilal/Insomnia"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
 
 
+def start_controller():
+    # A just-stopped controller can still own the bus name for a moment after
+    # its object path disappears; registering then fails and the new process
+    # exits. Retry until the name is actually free.
+    for _ in range(30):
+        process = subprocess.Popen([str(binary), "--daemon"], env=env)
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            if controller_ready():
+                return process
+            if process.poll() is not None:
+                break
+            time.sleep(0.1)
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        time.sleep(0.5)
+    raise AssertionError("daemon did not register its bus name")
+
+
 with tempfile.TemporaryDirectory(prefix="insomnia-integration-") as root:
     env["XDG_STATE_HOME"] = root
     fake = subprocess.Popen([str(fixtures)], env=env)
@@ -81,8 +107,7 @@ with tempfile.TemporaryDirectory(prefix="insomnia-integration-") as root:
         assert not command("status")["active"]
         command("shutdown")
         until(lambda: not controller_ready(), seconds=15)
-        daemon = subprocess.Popen([str(binary), "--daemon"], env=env)
-        until(controller_ready, seconds=15)
+        daemon = start_controller()
         capabilities = command("doctor")
         assert capabilities["logind"] and capabilities["supervisor"]
         if env.get('EVEREYE_SUPERVISOR') == 'kernel-timer':
@@ -137,8 +162,7 @@ with tempfile.TemporaryDirectory(prefix="insomnia-integration-") as root:
         os.kill(int(match[1]),signal.SIGKILL)
         daemon.wait(timeout=5)
         until(lambda: prop(LOGIN, "ActiveLocks") == 0)
-        daemon = subprocess.Popen([str(binary), "--daemon"], env=env)
-        until(controller_ready, seconds=15)
+        daemon = start_controller()
         assert not command("status")["active"], "interrupted session silently resumed"
         command("start", "60s")
         # Poll gently across the whole session: spawning the CLI 10x/second for
