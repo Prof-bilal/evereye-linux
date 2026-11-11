@@ -15,7 +15,8 @@ source_name = f"evereye-{version}"
 binary_name = f"evereye-{version}-linux-{platform.machine()}"
 binary = root / "build/evereye"
 assert binary.is_file(), "Run scripts/build.sh first"
-excluded = {"build", "build-tests", "build-fake-services", "dist", "test-results", "__pycache__", ".git", ".flatpak-builder", ".cache"}
+excluded = {"build", "build-tests", "build-fake-services", "dist", "test-results", "__pycache__", ".git", ".flatpak-builder", ".cache",
+            "node_modules", ".next", "out", "playwright-report", "test-results"}
 source_archive = dist / f"{source_name}-source.tar.gz"
 with reproducible_archive(source_archive) as (archive, normalize):
     for path in sorted(root.rglob("*")):
@@ -32,6 +33,11 @@ with reproducible_archive(binary_archive) as (archive, normalize):
         archive.add(root / name, arcname=f"{binary_name}/{name}", filter=normalize)
     archive.add(root / "scripts/install-user.sh", arcname=f"{binary_name}/install-user.sh", filter=normalize)
     archive.add(root / "scripts/uninstall-user.sh", arcname=f"{binary_name}/uninstall-user.sh", filter=normalize)
+    web = root.parent / "mobile/out"
+    if (web / "index.html").is_file():
+        for path in sorted(web.rglob("*")):
+            if path.is_file():
+                archive.add(path, arcname=f"{binary_name}/web/{path.relative_to(web)}", filter=normalize)
 manifest = []
 for path in [source_archive, binary_archive, dist / "PKGBUILD"]:
     manifest.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}")

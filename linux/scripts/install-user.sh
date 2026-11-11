@@ -15,6 +15,9 @@ prefix=${EVEREYE_PREFIX:-"$HOME/.local"}
 bin_dir="$prefix/bin"
 app_dir="$prefix/share/applications"
 icon_dir="$prefix/share/icons/hicolor/scalable/apps"
+desktop_tmp=$(mktemp)
+gateway_tmp=$(mktemp)
+trap 'rm -f "$desktop_tmp" "$gateway_tmp"' EXIT
 
 if [[ ! -x "$binary" ]]; then
   echo "EverEye binary not found or not executable: $binary" >&2
@@ -25,8 +28,26 @@ fi
 install -Dm755 "$binary" "$bin_dir/evereye"
 install -Dm644 "$project_dir/assets/io.github.ProfBilal.EverEye.svg" \
   "$icon_dir/io.github.ProfBilal.EverEye.svg"
-desktop_tmp=$(mktemp)
-trap 'rm -f "$desktop_tmp"' EXIT
+
+# Ship the mobile PWA when it has been built, so `evereye gateway` serves it
+# from the same origin. Release archives place it at <archive>/web.
+web_source=""
+for candidate in "$project_dir/web" "$project_dir/../mobile/out"; do
+  if [[ -f "$candidate/index.html" ]]; then web_source="$candidate"; break; fi
+done
+if [[ -n "$web_source" ]]; then
+  install -d "$prefix/share/evereye/web"
+  cp -R "$web_source/." "$prefix/share/evereye/web/"
+  echo "Web controls: $prefix/share/evereye/web"
+fi
+
+if [[ "${EVEREYE_INSTALL_GATEWAY:-0}" == "1" ]]; then
+  unit_dir="$prefix/lib/systemd/user"
+  sed -e "s|^ExecStart=.*|ExecStart=$bin_dir/evereye gateway|" \
+    "$project_dir/packaging/systemd/evereye-gateway.service" > "$gateway_tmp"
+  install -Dm644 "$gateway_tmp" "$unit_dir/evereye-gateway.service"
+  echo "Gateway unit installed. Enable it explicitly: systemctl --user enable --now evereye-gateway"
+fi
 sed -e "s|^Exec=.*|Exec=$bin_dir/evereye|" \
   -e "s|^TryExec=.*|TryExec=$bin_dir/evereye|" \
   "$project_dir/packaging/io.github.ProfBilal.EverEye.desktop" > "$desktop_tmp"

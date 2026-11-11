@@ -1,4 +1,5 @@
 #include "core.h"
+#include "jobs.h"
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -122,8 +123,13 @@ QString DiskJournal::write(const QJsonObject &o) {
     const int result = ::fsync(fd); ::close(fd);
     return result == 0 ? QString() : QString("Cannot synchronize state directory");
 }
-Controller::Controller(Platform &p, Guardian &g, Journal &j, std::function<qint64()> c, QObject *parent)
-    : QObject(parent), platform(p), guardian(g), journal(j), clock(std::move(c)) {}
+Controller::Controller(Platform &p, Guardian &g, Journal &j, std::function<qint64()> c, QObject *parent, JobManager *managed)
+    : QObject(parent), platform(p), guardian(g), journal(j), clock(std::move(c)), jobs(managed) {
+    if (jobs) {
+        QObject::connect(jobs, &JobManager::jobChanged, this, &Controller::changed);
+        QObject::connect(jobs, &JobManager::output, this, &Controller::jobOutput);
+    }
+}
 Controller::~Controller() { if (running) end("Controller stopped"); platform.releaseInhibitor(); guardian.stop(); }
 QJsonObject Controller::record(bool active, qint64 until, const QString &reason) const {
     auto o = options.json();
@@ -155,7 +161,8 @@ QJsonObject Controller::status() const {
             {"powerSaverHeld", platform.powerSaverHeld()}, {"batteryPresent", latest.battery == Power::Present},
             {"batteryKnown", latest.battery != Power::Unknown}, {"batteryPercent", latest.percent},
             {"acKnown", latest.acKnown}, {"onBattery", latest.onBattery},
-            {"lidKnown", latest.lidKnown}, {"lidClosed", latest.lidClosed}, {"recoveryBlocked", recoveryBlocked}};
+            {"lidKnown", latest.lidKnown}, {"lidClosed", latest.lidClosed}, {"recoveryBlocked", recoveryBlocked},
+            {"jobCount", jobs ? jobs->jobCount() : 0}, {"runningJobs", jobs ? jobs->runningCount() : 0}};
 }
 QJsonObject Controller::ok() const { auto o = status(); o.insert("ok", true); return o; }
 QJsonObject Controller::fail(const QString &message) { lastError = message; emit changed(); auto o = status(); o.insert("ok", false); return o; }
@@ -165,6 +172,13 @@ QJsonObject Controller::request(const QString &action, const QJsonObject &args) 
     if (action == "start") return start(args);
     if (action == "extend") return extend(args);
     if (action == "end") return end("Ended by user");
+    if (!jobs) return fail("Unknown action: " + action);
+    if (action == "jobs.list") { auto o = jobs->list(); o.insert("connected", true); return o; }
+    if (action == "jobs.get") return jobs->get(args.value("id").toString());
+    if (action == "jobs.start") return jobs->start(args);
+    if (action == "jobs.stop") return jobs->stop(args.value("id").toString());
+    if (action == "jobs.log") return jobs->log(args);
+    if (action == "tasks.list") return jobs->tasks();
     return fail("Unknown action: " + action);
 }
 static qint64 secondsFrom(const QJsonObject &args) {

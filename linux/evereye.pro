@@ -1,10 +1,10 @@
-QT += core gui widgets dbus concurrent
+QT += core gui widgets dbus concurrent network
 CONFIG += c++20 release warn_on
 CONFIG -= app_bundle
 TEMPLATE = app
 TARGET = evereye
-SOURCES += src/main.cpp src/core.cpp src/platform.cpp src/guardian.cpp src/service.cpp src/window.cpp
-HEADERS += src/core.h src/platform.h src/guardian.h src/service.h src/window.h
+SOURCES += src/main.cpp src/core.cpp src/platform.cpp src/guardian.cpp src/service.cpp src/window.cpp src/jobs.cpp src/gateway.cpp
+HEADERS += src/core.h src/platform.h src/guardian.h src/service.h src/window.h src/jobs.h src/gateway.h
 QMAKE_CXXFLAGS += -Wall -Wextra -Wpedantic
 isEmpty(PREFIX): PREFIX = /usr
 target.path = $$PREFIX/bin
@@ -20,4 +20,4 @@ metainfo.files = packaging/io.github.ProfBilal.EverEye.metainfo.xml
 metainfo.path = $$PREFIX/share/metainfo
 INSTALLS += metainfo
 
-LIBS += -lrt
+LIBS += -lrt -lutil

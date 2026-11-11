@@ -70,11 +70,12 @@ private:
     int lockFd = -1;
 };
 
+class JobManager;
 class Controller final : public QObject {
     Q_OBJECT
 public:
     Controller(Platform &, Guardian &, Journal &, std::function<qint64()> clock = bootMilliseconds,
-               QObject *parent = nullptr);
+               QObject *parent = nullptr, JobManager *jobs = nullptr);
     ~Controller() override;
     QJsonObject request(const QString &action, const QJsonObject &args = {});
     void tick();
@@ -84,6 +85,7 @@ public:
     bool active() const { return running; }
 signals:
     void changed();
+    void jobOutput(const QString &id, const QByteArray &chunk);
 private:
     QJsonObject start(const QJsonObject &);
     QJsonObject extend(const QJsonObject &);
@@ -107,5 +109,6 @@ private:
     QString lastError;
     QString lastReason = "Ready";
     QString profileWarning;
+    JobManager *jobs = nullptr;
 };
 }

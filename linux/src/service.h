@@ -15,11 +15,14 @@ public slots:
     Q_SCRIPTABLE QString Request(const QString &action, const QString &json);
 signals:
     void Changed();
+    void JobsChanged();
+    void JobOutput(const QString &id, const QByteArray &chunk);
 private:
     Controller &controller;
 };
 QJsonObject callController(const QString &action, const QJsonObject &args = {}, bool launch = true);
 QString stateDirectory();
+QString jobsDirectory();
 QString controllerExecutable();
 int runService();
 }

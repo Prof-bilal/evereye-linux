@@ -16,10 +16,14 @@
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMenu>
+#include <QMessageBox>
+#include <QPlainTextEdit>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -27,6 +31,7 @@
 #include <QStyle>
 #include <QSpinBox>
 #include <QSystemTrayIcon>
+#include <QTextCursor>
 #include <QTextEdit>
 #include <QTimer>
 #include <QToolButton>
@@ -194,14 +199,16 @@ Window::Window(Client c, bool demonstration, bool background)
         QScrollBar::handle:vertical { background: #52675d; min-height: 38px; border-radius: 4px; }
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
         QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
-        QTextEdit { background: #202627; color: #eef2fc; border: 1px solid #48534f; padding: 12px; }
+        QTextEdit, QPlainTextEdit { background: #202627; color: #eef2fc; border: 1px solid #48534f; padding: 12px; font-family: "DejaVu Sans Mono", monospace; }
+        QListWidget { background: #202627; color: #eef2fc; border: 1px solid #48534f; }
+        QLineEdit { background: #202627; color: #f4f6ff; border: 1px solid #495550; border-radius: 8px; padding: 8px; }
     )");
     auto *outer = new QVBoxLayout(this); outer->setContentsMargins(0, 0, 0, 0);
     auto *shell = card("shell"); outer->addWidget(shell); auto *split = new QHBoxLayout(shell); split->setContentsMargins(0,0,0,0); split->setSpacing(0);
     sidebar = card("sidebar"); sidebar->setFixedWidth(205); auto *side = new QVBoxLayout(sidebar); side->setContentsMargins(16,28,16,24); side->setSpacing(6);
     auto *brand = new QHBoxLayout; brand->setSpacing(12); auto *mark = new QLabel; mark->setPixmap(eyeIcon(true).pixmap(37,37)); brand->addWidget(mark);
     brand->addWidget(textLabel("EverEye", "appName")); auto *platformTag = textLabel("LINUX", "linux"); brand->addWidget(platformTag,0,Qt::AlignTop); brand->addStretch(); side->addLayout(brand); side->addSpacing(26);
-    const QStringList names{"Overview", "Sessions", "Lid actions", "Preferences"};
+    const QStringList names{"Overview", "Sessions", "Lid actions", "Preferences", "AI sessions"};
     for (int i=0; i<names.size(); ++i) {
         auto *button = new QPushButton(names[i]); button->setObjectName("nav" + QString::number(i)); button->setProperty("nav",true); button->setCheckable(true); button->setCursor(Qt::PointingHandCursor); side->addWidget(button);
         connect(button,&QPushButton::clicked,this,[this,i]{ selectPage(i); });
@@ -282,6 +289,41 @@ Window::Window(Client c, bool demonstration, bool background)
     thresholds->addWidget(textLabel("End session below","muted",true),0,0); thresholds->addWidget(textLabel("Power saver below","muted",true),0,1); thresholds->addWidget(cutoff,1,0); thresholds->addWidget(lowPower,1,1); thresholds->setColumnStretch(0,1); thresholds->setColumnStretch(1,1); settingsLayout->addLayout(thresholds);
     settingsLayout->addWidget(textLabel("Set battery cutoff to 0% to disable it. Crash recovery releases interrupted sessions; it never silently resumes them.","muted",true)); preferences->addWidget(settings);
     auto *diagnostics=new QPushButton("Open diagnostics"); diagnostics->setObjectName("diagnostics"); preferences->addWidget(diagnostics); preferences->addWidget(textLabel("Closing the window keeps a running session alive. End session and quit is available in the window menu.","muted",true)); preferences->addStretch();
+    auto *aiPage=page(); aiPage->addWidget(textLabel("AI sessions","sectionTitle"));
+    aiPage->addWidget(textLabel("Launch a coding agent under EverEye, keep the lid closed, and watch or stop it from here.","muted",true));
+    auto *aiCard=card("dashboardCard"); auto *aiLayout=new QVBoxLayout(aiCard); aiLayout->setContentsMargins(24,24,24,24); aiLayout->setSpacing(12);
+    jobPreset=new Choice; jobPreset->setObjectName("jobPreset"); jobPreset->setAccessibleName("Task preset"); jobPreset->addItem("Custom command", QString());
+    jobCommand=new QLineEdit; jobCommand->setObjectName("jobCommand"); jobCommand->setPlaceholderText("command and arguments, e.g. claude"); jobCommand->setAccessibleName("Job command");
+    auto *jobRow=new QHBoxLayout; jobStart=new QPushButton("Start AI session"); jobStart->setObjectName("jobStart"); jobStop=new QPushButton("Stop"); jobStop->setObjectName("jobStop"); jobRefresh=new QPushButton("Refresh"); jobRefresh->setObjectName("jobRefresh");
+    jobRow->addWidget(jobStart); jobRow->addWidget(jobStop); jobRow->addWidget(jobRefresh);
+    jobList=new QListWidget; jobList->setObjectName("jobList"); jobList->setAccessibleName("AI jobs"); jobList->setFixedHeight(88);
+    jobLog=new QPlainTextEdit; jobLog->setObjectName("jobLog"); jobLog->setReadOnly(true); jobLog->setMaximumBlockCount(4000); jobLog->setAccessibleName("Job output"); jobLog->setFixedHeight(96);
+    aiLayout->addWidget(textLabel("Start from a preset or a command","muted")); aiLayout->addWidget(jobPreset); aiLayout->addWidget(jobCommand); aiLayout->addLayout(jobRow);
+    aiLayout->addWidget(textLabel("Jobs","muted")); aiLayout->addWidget(jobList); aiLayout->addWidget(jobLog); aiPage->addWidget(aiCard); aiPage->addStretch();
+    connect(jobStart,&QPushButton::clicked,this,[this]{
+        QJsonObject args;
+        const auto preset=jobPreset->currentData().toString();
+        if(!preset.isEmpty()) args.insert("preset",preset);
+        else {
+            const auto text=jobCommand->text().trimmed();
+            if(text.isEmpty()){ localError="Choose a preset or enter a command."; render(current); return; }
+            const auto parts=text.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+            args.insert("command", parts.value(0)); QJsonArray rest; for(int i=1;i<parts.size();++i) rest.append(parts[i]); args.insert("args", rest);
+        }
+        perform("jobs.start", args);
+    });
+    connect(jobStop,&QPushButton::clicked,this,[this]{
+        if(selectedJob.isEmpty()) return;
+        if(QMessageBox::question(this,"Stop job","Stop the selected AI session?")!=QMessageBox::Yes) return;
+        perform("jobs.stop", {{"id", selectedJob}});
+    });
+    connect(jobRefresh,&QPushButton::clicked,this,[this]{ dispatch("jobs.list"); dispatch("tasks.list"); });
+    connect(jobList,&QListWidget::currentRowChanged,this,[this](int row){
+        if(row<0 || !jobList->currentItem()) return;
+        selectedJob=jobList->currentItem()->data(Qt::UserRole).toString(); jobLogOffset=0; if(jobLog) jobLog->clear();
+        if(!selectedJob.isEmpty()) dispatch("jobs.log", {{"id", selectedJob}, {"offset", 0}});
+    });
+    connect(jobPreset,&QComboBox::currentIndexChanged,this,[this]{ jobCommand->setEnabled(jobPreset->currentData().toString().isEmpty()); });
     error=textLabel("","error",true); error->setAccessibleName("Session error or warning"); error->hide(); content->addWidget(error);
     reconnect=new QPushButton("Reconnect to service"); reconnect->hide(); content->addWidget(reconnect); content->addStretch(); scroll->setWidget(canvas);
     connect(reconnect,&QPushButton::clicked,this,[this]{ perform("connect"); }); connect(diagnostics,&QPushButton::clicked,this,[this]{ dispatch("doctor"); });
@@ -300,6 +342,7 @@ Window::Window(Client c, bool demonstration, bool background)
     }
     auto *timer=new QTimer(this); timer->setInterval(1000); connect(timer,&QTimer::timeout,this,&Window::refresh); timer->start();
     selectPage(0); render({{"connected",false}}); refresh();
+    if (jobPreset) dispatch("tasks.list");
 }
 Window::~Window() { delete quickPanel; }
 void Window::paintEvent(QPaintEvent *) {
@@ -444,7 +487,7 @@ void Window::renderQuickPanel() {
 void Window::selectPage(int index) {
     if(!pages || index<0 || index>=pages->count()) return;
     pages->setCurrentIndex(index); pagePicker->setCurrentIndex(index);
-    for(int i=0;i<4;++i) findChild<QPushButton *>("nav"+QString::number(i))->setChecked(i==index);
+    for(int i=0;i<pages->count();++i) if(auto *button=findChild<QPushButton *>("nav"+QString::number(i))) button->setChecked(i==index);
     breadcrumb->setText(pagePicker->itemText(index));
     // Hidden pages must not impose their minimum height on the current page.
     for(int i=0;i<pages->count();++i) pages->widget(i)->setSizePolicy(i==index?QSizePolicy::Expanding:QSizePolicy::Ignored,i==index?QSizePolicy::Minimum:QSizePolicy::Ignored);
@@ -479,7 +522,7 @@ void Window::resizeEvent(QResizeEvent *event) {
     if(countdown) countdown->setStyleSheet(width()<450?"font-size: 38px;":"font-size: 53px;");
     if(headline) headline->setStyleSheet(width()<450?"font-size: 22px;":"font-size: 26px;");
 }
-void Window::refresh() { dispatch("status"); }
+void Window::refresh() { dispatch("status"); if (jobList) dispatch("jobs.list"); }
 void Window::perform(const QString &action, const QJsonObject &args) { localError.clear(); dispatch(action, args); }
 void Window::dispatch(const QString &action, const QJsonObject &args) {
     if (inFlight) {
@@ -497,9 +540,46 @@ void Window::dispatch(const QString &action, const QJsonObject &args) {
 void Window::acceptReply(const QString &action, const QJsonObject &reply) {
     inFlight = false; operationInFlight = false;
     if (action == "doctor") { updateButtons(); showDiagnostics(reply); }
-    else {
+    else if (action == "jobs.list") {
+        if (jobList) {
+            const auto previous = selectedJob;
+            jobList->clear();
+            for (const auto &value : reply.value("jobs").toArray()) {
+                const auto job = value.toObject();
+                auto *item = new QListWidgetItem(job.value("name").toString() + "  ·  " + job.value("status").toString() + "  ·  " + job.value("id").toString());
+                item->setData(Qt::UserRole, job.value("id").toString());
+                jobList->addItem(item);
+                if (job.value("id").toString() == previous) jobList->setCurrentItem(item);
+            }
+            if (!selectedJob.isEmpty()) dispatch("jobs.log", {{"id", selectedJob}, {"offset", jobLogOffset}});
+        }
+        updateButtons();
+    } else if (action == "tasks.list") {
+        if (jobPreset) {
+            const auto currentPreset = jobPreset->currentData().toString();
+            jobPreset->clear(); jobPreset->addItem("Custom command", QString());
+            for (const auto &value : reply.value("tasks").toArray()) {
+                const auto task = value.toObject();
+                jobPreset->addItem(task.value("name").toString(), task.value("name").toString());
+            }
+            const int found = jobPreset->findData(currentPreset);
+            jobPreset->setCurrentIndex(found >= 0 ? found : 0);
+        }
+        updateButtons();
+    } else if (action == "jobs.log") {
+        if (jobLog && reply.value("id").toString() == selectedJob) {
+            const auto data = reply.value("data").toString();
+            if (!data.isEmpty()) { jobLog->moveCursor(QTextCursor::End); jobLog->insertPlainText(data); }
+            jobLogOffset = reply.value("nextOffset").toInteger();
+        }
+        updateButtons();
+    } else {
         render(reply);
         if (action == "start" && reply.value("ok").toBool()) selectPage(0);
+        if ((action == "jobs.start" || action == "jobs.stop") && reply.value("ok").toBool()) {
+            if (action == "jobs.start") { selectedJob = reply.value("id").toString(); jobLogOffset = 0; if (jobLog) jobLog->clear(); }
+            dispatch("jobs.list");
+        }
         if (action == "shutdown" && reply.value("ok").toBool()) { QApplication::quit(); return; }
         if (action != "status" && !error->isHidden()) scroll->ensureWidgetVisible(error);
     }
@@ -538,6 +618,14 @@ void Window::updateButtons() {
     sessionToggle->setEnabled(connected && !working && !current.value("recoveryBlocked").toBool());
     sessionToggle->setChecked(active); extension->setEnabled(connected && !working);
     overviewStart->setText(working ? "Working…" : "Start session");
+    if (jobStart) {
+        jobStart->setEnabled(connected && !working);
+        jobStop->setEnabled(connected && !working && !selectedJob.isEmpty());
+        jobRefresh->setEnabled(connected && !working);
+        jobCommand->setEnabled(connected && !working && jobPreset->currentData().toString().isEmpty());
+        jobPreset->setEnabled(connected && !working);
+        jobList->setEnabled(connected);
+    }
 }
 void Window::render(const QJsonObject &result) {
     const bool wasActive = current.value("active").toBool(); current = result;

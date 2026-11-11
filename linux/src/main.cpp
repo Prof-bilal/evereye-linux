@@ -1,4 +1,5 @@
 #include "core.h"
+#include "gateway.h"
 #include "guardian.h"
 #include "platform.h"
 #include "service.h"
@@ -60,12 +61,61 @@ static bool replaceUi(QDBusConnection &bus) {
 }
 static int cli(const QStringList &args) {
     if (args.isEmpty() || args.first() == "--help" || args.first() == "help") {
-        QTextStream(stdout) << "EverEye 0.4.0\n\nUsage:\n  evereye                         Open controls and tray\n  evereye start 2h30m [--no-lid] [--no-power-saver]\n      [--battery-cutoff 10] [--power-saver-below 40]\n  evereye extend 15m\n  evereye status | end | shutdown | doctor\n  evereye --daemon                Run the controller in foreground\n  evereye --replace-ui            Reopen with this build; keep session\n  evereye --demo                  Preview without power changes\n  evereye --screenshot FILE.png   Render an offline UI preview\n\nDurations: seconds or d/h/m/s units; minimum 60s, maximum 30d.\n"; return 0;
+        QTextStream(stdout) << "EverEye 0.4.0\n\nUsage:\n  evereye                         Open controls and tray\n  evereye start 2h30m [--no-lid] [--no-power-saver]\n      [--battery-cutoff 10] [--power-saver-below 40]\n  evereye extend 15m\n  evereye status | end | shutdown | doctor\n  evereye run <preset> [--name N]\n  evereye run -- <command> [args...]\n  evereye jobs | jobs stop <id> | jobs log <id> [-f] [--offset N]\n  evereye tasks\n  evereye gateway [--bind 127.0.0.1] [--port 8737]\n  evereye --daemon                Run the controller in foreground\n  evereye --replace-ui            Reopen with this build; keep session\n  evereye --demo                  Preview without power changes\n  evereye --screenshot FILE.png   Render an offline UI preview\n\nDurations: seconds or d/h/m/s units; minimum 60s, maximum 30d.\n"; return 0;
     }
     if (args.first() == "--version") { QTextStream(stdout) << "EverEye 0.4.0\n"; return 0; }
     const auto action = args.first();
     if (action == "--daemon" && args.size() == 1) return runService();
     if (action == "--watchdog" && args.size() == 1) return runGuardian();
+    if (action == "gateway") return runGateway(args.mid(1));
+    if (action == "tasks" && args.size() == 1) {
+        const auto result = callController("tasks.list"); output(result); return result.value("ok").toBool() ? 0 : 1;
+    }
+    if (action == "run") {
+        QJsonObject params;
+        int i = 1;
+        if (i < args.size() && args[i] == "--") {
+            if (args.size() < 3) { output({{"ok", false}, {"error", "A command is required"}}); return 2; }
+            params.insert("command", args[2]);
+            QJsonArray argv;
+            for (int n = 3; n < args.size(); ++n) argv.append(args[n]);
+            params.insert("args", argv);
+        } else {
+            if (i >= args.size() || args[i].startsWith("-")) { output({{"ok", false}, {"error", "A preset name is required"}}); return 2; }
+            params.insert("preset", args[i++]);
+            if (i < args.size() && args[i] == "--name" && i + 1 < args.size()) { params.insert("name", args[++i]); ++i; }
+            else if (i < args.size()) { output({{"ok", false}, {"error", "Unknown or incomplete option: " + args[i]}}); return 2; }
+        }
+        const auto result = callController("jobs.start", params); output(result); return result.value("ok").toBool() ? 0 : 1;
+    }
+    if (action == "jobs") {
+        if (args.size() == 1) { const auto result = callController("jobs.list"); output(result); return result.value("ok").toBool() ? 0 : 1; }
+        if (args.size() >= 3 && args[1] == "stop") {
+            const auto result = callController("jobs.stop", {{"id", args[2]}}); output(result); return result.value("ok").toBool() ? 0 : 1;
+        }
+        if (args.size() >= 3 && args[1] == "log") {
+            QJsonObject params{{"id", args[2]}};
+            bool follow = false;
+            for (int i = 3; i < args.size(); ++i) {
+                if (args[i] == "-f") follow = true;
+                else if (args[i] == "--offset" && i + 1 < args.size()) params.insert("offset", args[++i].toLongLong());
+                else { output({{"ok", false}, {"error", "Unknown jobs log option"}}); return 2; }
+            }
+            qint64 offset = params.value("offset").toInteger(0);
+            do {
+                params.insert("offset", offset);
+                const auto result = callController("jobs.log", params);
+                if (!result.value("ok").toBool()) { output(result); return 1; }
+                const auto data = result.value("data").toString();
+                if (follow && !data.isEmpty()) { QTextStream stream(stdout); stream << data << Qt::flush; }
+                offset = result.value("nextOffset").toInteger();
+                if (!follow) { output(result); return 0; }
+                if (result.value("eof").toBool()) return 0;
+                QThread::msleep(300);
+            } while (true);
+        }
+        output({{"ok", false}, {"error", "Unknown jobs command; use jobs, jobs stop <id>, or jobs log <id>"}}); return 2;
+    }
     if (action == "doctor" && args.size() == 1) {
         LinuxPlatform p; auto o = p.capabilities(); o.insert("stateDirectory", stateDirectory()); o.insert("ok", o.value("systemBus").toBool() && o.value("logind").toBool() && o.value("unixFdPassing").toBool() && o.value("supervisor").toBool()); output(o); return o.value("ok").toBool() ? 0 : 1;
     }

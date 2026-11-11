@@ -72,6 +72,22 @@ QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ctest -
 
 `start`, `status`, `extend`, and `end` launch the controller if necessary. `shutdown` ends the session and exits the controller. `doctor` checks system services directly and returns nonzero when logind/system D-Bus is unavailable. All CLI responses except help/version are JSON; failed operations return a nonzero exit code.
 
+## AI sessions and the phone gateway
+
+```bash
+./build/evereye run -- claude          # run an agent in a controller-owned PTY
+./build/evereye run claude --name agent # start a preset from tasks.json
+./build/evereye jobs                   # list jobs and exit codes
+./build/evereye jobs log <id> -f       # follow live output
+./build/evereye jobs stop <id>         # SIGTERM, then SIGKILL after 5s
+./build/evereye tasks                  # list presets and whether arbitrary commands are allowed
+./build/evereye gateway [--bind 127.0.0.1] [--port 8737]
+```
+
+Jobs write `${XDG_STATE_HOME}/insomnia-linux/jobs/<id>.log` (0600) and are journalled in `jobs.json`; a job left running across a controller restart is marked `Interrupted`, never silently reattached. Presets live in `~/.config/evereye/tasks.json`, limits in `~/.config/evereye/jobs.json`.
+
+The gateway is a separate opt-in process. It requires `Authorization: Bearer <token>` from `~/.config/evereye/gateway.json`, binds loopback by default, and refuses an off-loopback bind without TLS unless `EVEREYE_INSECURE_ALLOW_PLAINTEXT=1`. It serves the built PWA from `~/.local/share/evereye/web` (or `/usr/share/evereye/web`) and can POST job-end webhooks to ntfy/Telegram/Discord. Test it with `dbus-run-session -- python3 scripts/test-gateway.py`. Build the phone app with `cd ../mobile && npm ci && npm run build`. See [AI-SESSIONS.md](docs/AI-SESSIONS.md) for the API and security model.
+
 Start options:
 
 ```bash

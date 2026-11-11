@@ -1,0 +1,12 @@
+{
+  "name": "EverEye AI sessions",
+  "short_name": "EverEye",
+  "description": "Watch and control EverEye AI sessions from your phone.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#12181a",
+  "theme_color": "#12181a",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

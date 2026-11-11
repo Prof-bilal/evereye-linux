@@ -1,5 +1,6 @@
 #include "service.h"
 #include "guardian.h"
+#include "jobs.h"
 #include "platform.h"
 #include <QCoreApplication>
 #include <QDBusConnectionInterface>
@@ -18,6 +19,10 @@
 namespace insomnia {
 ServiceObject::ServiceObject(Controller &c, QObject *parent) : QObject(parent), controller(c) {
     connect(&controller, &Controller::changed, this, &ServiceObject::Changed);
+    connect(&controller, &Controller::changed, this, &ServiceObject::JobsChanged);
+    connect(&controller, &Controller::jobOutput, this, [this](const QString &id, const QByteArray &chunk) {
+        emit JobOutput(id, chunk.size() > 4096 ? chunk.left(4096) : chunk);
+    });
 }
 QString ServiceObject::Request(const QString &action, const QString &json) {
     const auto encode = [](const QJsonObject &o) { return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)); };
@@ -40,6 +45,7 @@ QString stateDirectory() {
     if (base.isEmpty() || !QDir::isAbsolutePath(base)) base = QDir::homePath() + "/.local/state";
     return base + "/insomnia-linux";
 }
+QString jobsDirectory() { return stateDirectory() + "/jobs"; }
 QString controllerExecutable() {
     const auto executable = QCoreApplication::applicationFilePath();
     const QFileInfo image(qEnvironmentVariable("APPIMAGE"));
@@ -84,7 +90,8 @@ int runService() {
     // Register the name first: only its owner may inspect or mutate the journal.
     if (!bus.registerService(Service)) { qCritical("Controller already running or service name unavailable"); return 1; }
     LinuxPlatform platform; ProcessGuardian guardian; DiskJournal journal(stateDirectory());
-    Controller controller(platform, guardian, journal); controller.reconcile();
+    JobManager jobs(jobsDirectory()); jobs.reconcile();
+    Controller controller(platform, guardian, journal, bootMilliseconds, nullptr, &jobs); controller.reconcile();
     ServiceObject object(controller);
     if (!bus.registerObject(ObjectPath, &object, QDBusConnection::ExportScriptableSlots | QDBusConnection::ExportAllSignals)) return 1;
     ::signal(SIGTERM, stopSignal); ::signal(SIGINT, stopSignal); ::signal(SIGHUP, stopSignal);

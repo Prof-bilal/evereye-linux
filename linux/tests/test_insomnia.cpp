@@ -1,9 +1,11 @@
 #include "core.h"
 #include "guardian.h"
+#include "jobs.h"
 #include "platform.h"
 #include "service.h"
 #include "window.h"
 #include <QApplication>
+#include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -118,6 +120,61 @@ private slots:
         }
         QVERIFY(!Options::parse({{"typo", true}}, o, error));
         QVERIFY(!Options::parse({{"lid", "true"}}, o, error));
+    }
+    void jobsRunAndCaptureOutput() {
+        QTemporaryDir temp;
+        JobManager manager(temp.path() + "/jobs", temp.path() + "/config");
+        const auto started = manager.start({{"command", "sh"}, {"args", QJsonArray{"-c", "printf hi"}}, {"cwd", temp.path()}});
+        QVERIFY2(started.value("ok").toBool(), qPrintable(started.value("error").toString()));
+        const auto id = started.value("id").toString();
+        QVERIFY(!id.isEmpty());
+        QTRY_VERIFY_WITH_TIMEOUT(manager.get(id).value("status").toString() == "Exited", 4000);
+        QCOMPARE(manager.get(id).value("exitCode").toInt(), 0);
+        const auto log = manager.log({{"id", id}, {"offset", 0}});
+        QVERIFY(log.value("ok").toBool());
+        QVERIFY(log.value("data").toString().contains("hi"));
+        QVERIFY(QFile::exists(started.value("logPath").toString()));
+    }
+    void jobsStopKillsChild() {
+        QTemporaryDir temp;
+        JobManager manager(temp.path() + "/jobs", temp.path() + "/config");
+        const auto started = manager.start({{"command", "sleep"}, {"args", QJsonArray{"300"}}, {"cwd", temp.path()}});
+        QVERIFY(started.value("ok").toBool());
+        const auto id = started.value("id").toString();
+        const auto pid = started.value("pid").toInteger();
+        QVERIFY(pid > 1);
+        QVERIFY(manager.stop(id).value("ok").toBool());
+        QTRY_VERIFY_WITH_TIMEOUT(::kill(pid_t(pid), 0) == -1, 6000);
+        QCOMPARE(manager.get(id).value("status").toString(), QString("Killed"));
+    }
+    void jobsJournalMarksDeadPidInterrupted() {
+        QTemporaryDir temp;
+        const auto dir = temp.path() + "/jobs";
+        QVERIFY(QDir().mkpath(dir));
+        QFile journal(dir + "/jobs.json");
+        QVERIFY(journal.open(QIODevice::WriteOnly));
+        journal.write(R"({"schema":1,"jobs":[{"id":"deadjob1","name":"x","command":"sleep","status":"Running","pid":1,"pgid":1}]})");
+        journal.close();
+        JobManager manager(dir, temp.path() + "/config");
+        manager.reconcile();
+        QCOMPARE(manager.get("deadjob1").value("status").toString(), QString("Interrupted"));
+    }
+    void jobsCapRefusesExtra() {
+        QTemporaryDir temp;
+        QVERIFY(QDir().mkpath(temp.path() + "/config"));
+        QFile cfg(temp.path() + "/config/jobs.json");
+        QVERIFY(cfg.open(QIODevice::WriteOnly));
+        cfg.write(R"({"maxJobs":1})");
+        cfg.close();
+        JobManager manager(temp.path() + "/jobs", temp.path() + "/config");
+        QVERIFY(manager.start({{"command", "sleep"}, {"args", QJsonArray{"30"}}, {"cwd", temp.path()}}).value("ok").toBool());
+        const auto extra = manager.start({{"command", "sleep"}, {"args", QJsonArray{"30"}}, {"cwd", temp.path()}});
+        QVERIFY(!extra.value("ok").toBool());
+        QVERIFY(extra.value("error").toString().contains("Too many"));
+    }
+    void unknownJobActionWithoutManager() {
+        Fixture f;
+        QVERIFY(!f.controller.request("jobs.list").value("ok").toBool());
     }
     void startAndExplicitEndCloseActualDescriptor() {
         Fixture f; QVERIFY(f.start().value("ok").toBool()); QVERIFY(f.controller.active()); QVERIFY(f.guardian.armed);
@@ -482,7 +539,7 @@ private slots:
         window.show(); QTest::qWait(30);
         auto *scroll=window.findChild<QScrollArea *>();
         QCOMPARE(scroll->verticalScrollBar()->maximum(),0);
-        for(int index=0;index<4;++index) { navigate(window,index); window.grab().save(QString("evereye-page-%1.png").arg(index)); }
+        for(int index=0;index<5;++index) { navigate(window,index); window.grab().save(QString("evereye-page-%1.png").arg(index)); }
     }
 private:
     static void navigate(Window &window,int index) {

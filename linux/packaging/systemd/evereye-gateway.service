@@ -1,0 +1,20 @@
+[Unit]
+Description=EverEye remote gateway
+Documentation=https://github.com/Prof-bilal/Insomnia
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/evereye gateway
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=5
+UMask=0077
+NoNewPrivileges=true
+# The gateway relays only same-user D-Bus calls and stores its token in
+# ~/.config/evereye/gateway.json. It is opt-in: enabling this unit exposes the
+# control API on the network, so bind/token/TLS settings come from that file.
+
+[Install]
+WantedBy=default.target

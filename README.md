@@ -47,6 +47,8 @@ The source archive is also attached to the [0.4.0 release](https://github.com/Pr
 - **Battery safeguards:** end below a configured battery floor and optionally request a temporary power-saver profile.
 - **Crash recovery:** the controller owns the power descriptors, an independent supervisor enforces the deadline, and kernel cleanup releases descriptors after a crash.
 - **Normal screen locking:** EverEye does not request screen-lock idle inhibition.
+- **AI sessions:** launch a coding agent under EverEye, capture its terminal output live, and start or stop it from a phone through an opt-in token-protected gateway.
+- **Mobile controls:** an installable PWA shows awake time and AI jobs, streams output, and notifies you when a job finishes.
 
 EverEye does not provide thermal protection, change global power policy, or guarantee behavior against firmware or desktop rules that force suspend. Test closed-lid behavior on your own hardware before relying on it.
 
@@ -61,6 +63,18 @@ evereye doctor
 ```
 
 Use `evereye shutdown` before removing an installed copy. CLI responses are JSON and failed operations return a non-zero exit code. Running `evereye` without an action opens the controls and tray.
+
+## AI sessions from your phone
+
+```bash
+evereye run -- claude          # own the agent in a PTY, captured live
+evereye jobs                   # list running and finished sessions
+evereye jobs log <id> -f       # follow output
+evereye jobs stop <id>
+evereye gateway                # opt-in HTTP + SSE bridge for the PWA
+```
+
+The gateway binds loopback by default and requires a token from `~/.config/evereye/gateway.json`. Off-loopback binds require TLS. Presets live in `~/.config/evereye/tasks.json`; arbitrary remote commands stay disabled unless you enable them. The phone app is in [mobile/](mobile/README.md), and the full model and threat notes are in [linux/docs/AI-SESSIONS.md](linux/docs/AI-SESSIONS.md).
 
 ## Validation
 
@@ -90,6 +104,7 @@ The broader portability audit remains separate from the public x86_64 release be
 |---|---|
 | [linux/](linux/README.md) | Native Linux application, build, packaging, and operations guide |
 | [landing/](landing/README.md) | Public EverEye landing page |
+| [mobile/](mobile/README.md) | Installable PWA for watching and controlling AI sessions |
 | [linux/src/](linux/src/) | Qt UI, controller, D-Bus integration, supervision, and power policy |
 | [linux/scripts/](linux/scripts/) | Build, install, package, integration, and portability checks |
 | [linux/dist/](linux/dist/) | Generated release archives and SHA-256 manifest |

@@ -7,7 +7,7 @@
 class QLabel; class QPushButton; class QSpinBox; class QCheckBox; class QSystemTrayIcon;
 class QScrollArea; class QBoxLayout; class QResizeEvent;
 class QStackedWidget; class QComboBox;
-class QDialog; class QToolButton;
+class QDialog; class QToolButton; class QPlainTextEdit; class QListWidget; class QLineEdit;
 namespace insomnia {
 QIcon eyeIcon(bool active = false);
 class Window final : public QWidget {
@@ -74,5 +74,14 @@ private:
     QLabel *quickLid = nullptr; QLabel *quickRecovery = nullptr;
     QSpinBox *quickDays = nullptr; QSpinBox *quickHours = nullptr; QSpinBox *quickMinutes = nullptr;
     QPushButton *quickCustom = nullptr;
+    QListWidget *jobList = nullptr;
+    QPlainTextEdit *jobLog = nullptr;
+    QComboBox *jobPreset = nullptr;
+    QLineEdit *jobCommand = nullptr;
+    QPushButton *jobStart = nullptr;
+    QPushButton *jobStop = nullptr;
+    QPushButton *jobRefresh = nullptr;
+    QString selectedJob;
+    qint64 jobLogOffset = 0;
 };
 }

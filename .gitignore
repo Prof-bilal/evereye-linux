@@ -1,5 +1,6 @@
 # Generated native build and test output
 linux/build/
+linux/build-cmake/
 linux/build-tests/
 linux/build-fake-services/
 linux/dist/pkg/
@@ -14,6 +15,15 @@ landing/out/
 landing/test-results/
 landing/playwright-report/
 landing/*.tsbuildinfo
+
+# Mobile PWA build and dependency output
+mobile/node_modules/
+mobile/.next/
+mobile/out/
+mobile/test-results/
+mobile/playwright-report/
+mobile/*.tsbuildinfo
+mobile/next-env.d.ts
 
 # Local editor and OS files
 .DS_Store
