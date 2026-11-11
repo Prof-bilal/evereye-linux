@@ -20,10 +20,26 @@ test("shows the live session and jobs", async ({ page }) => {
   await expect(page.getByRole("button", { name: /claude/ })).toBeVisible();
 });
 
-test("selecting a job streams its output", async ({ page }) => {
+test("selecting a job streams its output without escape codes", async ({ page }) => {
   await connect(page);
   await page.getByRole("button", { name: /claude/ }).first().click();
   await expect(page.getByTestId("log")).toContainText("hello from mock");
+  await expect(page.getByTestId("log")).not.toContainText("\u001b[");
+});
+
+test("typing in the terminal sends input to the job", async ({ page, request }) => {
+  await connect(page);
+  await page.getByRole("button", { name: /claude/ }).first().click();
+  const input = page.getByLabel("Terminal input");
+  await input.fill("echo hi");
+  await input.press("Enter");
+  await expect(input).toHaveValue("");
+  await expect
+    .poll(async () => {
+      const response = await request.get("http://127.0.0.1:3108/api/__lastinput");
+      return (await response.json()).input;
+    })
+    .toBe("echo hi\n");
 });
 
 test("ending the session clears the active state", async ({ page }) => {

@@ -70,6 +70,7 @@ Use `evereye shutdown` before removing an installed copy. CLI responses are JSON
 evereye run -- claude          # own the agent in a PTY, captured live
 evereye jobs                   # list running and finished sessions
 evereye jobs log <id> -f       # follow output
+evereye jobs send <id> "ls"    # type into a running job
 evereye jobs stop <id>
 evereye gateway                # opt-in HTTP + SSE bridge for the PWA
 ```

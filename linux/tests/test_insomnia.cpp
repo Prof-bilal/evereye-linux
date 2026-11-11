@@ -147,6 +147,27 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(::kill(pid_t(pid), 0) == -1, 6000);
         QCOMPARE(manager.get(id).value("status").toString(), QString("Killed"));
     }
+    void jobsInputReachesPty() {
+        QTemporaryDir temp;
+        JobManager manager(temp.path() + "/jobs", temp.path() + "/config");
+        const auto started = manager.start({{"command", "cat"}, {"cwd", temp.path()}});
+        QVERIFY2(started.value("ok").toBool(), qPrintable(started.value("error").toString()));
+        const auto id = started.value("id").toString();
+        const auto sent = manager.input({{"id", id}, {"data", "ping\n"}});
+        QVERIFY2(sent.value("ok").toBool(), qPrintable(sent.value("error").toString()));
+        QTRY_VERIFY_WITH_TIMEOUT(manager.log({{"id", id}, {"offset", 0}})["data"].toString().contains("ping"), 4000);
+        manager.stop(id);
+    }
+    void jobsShellAcceptsTypedCommands() {
+        QTemporaryDir temp;
+        JobManager manager(temp.path() + "/jobs", temp.path() + "/config");
+        const auto started = manager.start({{"shell", true}, {"cwd", temp.path()}});
+        QVERIFY2(started.value("ok").toBool(), qPrintable(started.value("error").toString()));
+        const auto id = started.value("id").toString();
+        QVERIFY(manager.input({{"id", id}, {"data", "echo shell-ok\n"}}).value("ok").toBool());
+        QTRY_VERIFY_WITH_TIMEOUT(manager.log({{"id", id}, {"offset", 0}})["data"].toString().contains("shell-ok"), 6000);
+        manager.stop(id);
+    }
     void jobsJournalMarksDeadPidInterrupted() {
         QTemporaryDir temp;
         const auto dir = temp.path() + "/jobs";

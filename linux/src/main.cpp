@@ -61,7 +61,7 @@ static bool replaceUi(QDBusConnection &bus) {
 }
 static int cli(const QStringList &args) {
     if (args.isEmpty() || args.first() == "--help" || args.first() == "help") {
-        QTextStream(stdout) << "EverEye 0.4.0\n\nUsage:\n  evereye                         Open controls and tray\n  evereye start 2h30m [--no-lid] [--no-power-saver]\n      [--battery-cutoff 10] [--power-saver-below 40]\n  evereye extend 15m\n  evereye status | end | shutdown | doctor\n  evereye run <preset> [--name N]\n  evereye run -- <command> [args...]\n  evereye jobs | jobs stop <id> | jobs log <id> [-f] [--offset N]\n  evereye tasks\n  evereye gateway [--bind 127.0.0.1] [--port 8737]\n  evereye --daemon                Run the controller in foreground\n  evereye --replace-ui            Reopen with this build; keep session\n  evereye --demo                  Preview without power changes\n  evereye --screenshot FILE.png   Render an offline UI preview\n\nDurations: seconds or d/h/m/s units; minimum 60s, maximum 30d.\n"; return 0;
+        QTextStream(stdout) << "EverEye 0.4.0\n\nUsage:\n  evereye                         Open controls and tray\n  evereye start 2h30m [--no-lid] [--no-power-saver]\n      [--battery-cutoff 10] [--power-saver-below 40]\n  evereye extend 15m\n  evereye status | end | shutdown | doctor\n  evereye run <preset> [--name N]\n  evereye run -- <command> [args...]\n  evereye jobs | jobs stop <id> | jobs log <id> [-f] [--offset N]\n  evereye jobs send <id> <text>\n  evereye tasks\n  evereye gateway [--bind 127.0.0.1] [--port 8737]\n  evereye --daemon                Run the controller in foreground\n  evereye --replace-ui            Reopen with this build; keep session\n  evereye --demo                  Preview without power changes\n  evereye --screenshot FILE.png   Render an offline UI preview\n\nDurations: seconds or d/h/m/s units; minimum 60s, maximum 30d.\n"; return 0;
     }
     if (args.first() == "--version") { QTextStream(stdout) << "EverEye 0.4.0\n"; return 0; }
     const auto action = args.first();
@@ -92,6 +92,10 @@ static int cli(const QStringList &args) {
         if (args.size() == 1) { const auto result = callController("jobs.list"); output(result); return result.value("ok").toBool() ? 0 : 1; }
         if (args.size() >= 3 && args[1] == "stop") {
             const auto result = callController("jobs.stop", {{"id", args[2]}}); output(result); return result.value("ok").toBool() ? 0 : 1;
+        }
+        if (args.size() >= 4 && args[1] == "send") {
+            const auto result = callController("jobs.input", {{"id", args[2]}, {"data", args.mid(3).join(' ') + "\n"}});
+            output(result); return result.value("ok").toBool() ? 0 : 1;
         }
         if (args.size() >= 3 && args[1] == "log") {
             QJsonObject params{{"id", args[2]}};

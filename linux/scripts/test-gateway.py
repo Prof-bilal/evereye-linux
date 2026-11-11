@@ -95,6 +95,7 @@ def live(tmp):
     (config / "evereye").mkdir(parents=True)
     (config / "evereye" / "tasks.json").write_text(json.dumps([
         {"name": "hello", "command": "sh", "args": ["-c", "printf hello-from-job; sleep 2"]},
+        {"name": "echo", "command": "cat"},
     ]))
     port = free_port()
     (config / "evereye" / "gateway.json").write_text(json.dumps({
@@ -128,6 +129,24 @@ def live(tmp):
         check(arbitrary[0] == 403, "arbitrary command is refused by default")
         check(json.loads(request(base + "/api/jobs", token, "POST", {"preset": "hello"})[1]).get("ok") is True,
               "second preset job starts")
+
+        echoed = json.loads(request(base + "/api/jobs", token, "POST", {"preset": "echo"})[1])
+        check(echoed.get("ok") is True, "interactive job starts")
+        echo_id = echoed["id"]
+        sent = json.loads(request(base + f"/api/jobs/{echo_id}/input", token, "POST", {"data": "ping\n"})[1])
+        check(sent.get("ok") is True, "input is accepted")
+        stream_req = urllib.request.Request(base + f"/api/jobs/{echo_id}/stream")
+        stream_req.add_header("Authorization", "Bearer " + token)
+        echoed_back = False
+        with urllib.request.urlopen(stream_req, timeout=10) as response:
+            deadline = time.time() + 8
+            while time.time() < deadline:
+                line = response.readline().decode()
+                if "ping" in line:
+                    echoed_back = True
+                    break
+        check(echoed_back, "PTY echoes typed input")
+        request(base + f"/api/jobs/{echo_id}/stop", token, "POST")
     finally:
         for process in (gateway, daemon):
             process.terminate()

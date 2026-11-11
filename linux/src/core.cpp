@@ -177,6 +177,7 @@ QJsonObject Controller::request(const QString &action, const QJsonObject &args) 
     if (action == "jobs.get") return jobs->get(args.value("id").toString());
     if (action == "jobs.start") return jobs->start(args);
     if (action == "jobs.stop") return jobs->stop(args.value("id").toString());
+    if (action == "jobs.input") return jobs->input(args);
     if (action == "jobs.log") return jobs->log(args);
     if (action == "tasks.list") return jobs->tasks();
     return fail("Unknown action: " + action);

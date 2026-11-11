@@ -233,6 +233,12 @@ private:
             if (id.isEmpty() || id.contains("..")) { writeJson(socket, 404, {{"ok", false}, {"error", "Not found"}}); return; }
             if (extra.isEmpty() && method == "GET") { writeJson(socket, 200, controller("jobs.get", {{"id", id}})); return; }
             if (extra == "/stop" && method == "POST") { writeJson(socket, 200, controller("jobs.stop", {{"id", id}})); return; }
+            if (extra == "/input" && method == "POST") {
+                QJsonParseError e; const auto d = QJsonDocument::fromJson(body, &e);
+                if (e.error != QJsonParseError::NoError || !d.isObject()) { writeJson(socket, 400, {{"ok", false}, {"error", "JSON object required"}}); return; }
+                writeJson(socket, 200, controller("jobs.input", {{"id", id}, {"data", d.object().value("data").toString()}}));
+                return;
+            }
             if (extra == "/stream" && method == "GET") { startStream(id); return; }
         }
         writeJson(socket, 404, {{"ok", false}, {"error", "Not found"}});

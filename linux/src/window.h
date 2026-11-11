@@ -33,6 +33,7 @@ private:
     void updateButtons();
     void updateSelection();
     void showDiagnostics(const QJsonObject &);
+    QString cleanTerminal(const QString &);
     void selectPage(int);
     void toggleQuickPanel();
     void createQuickPanel();
@@ -46,6 +47,7 @@ private:
     bool backgroundRequests;
     bool inFlight = false;
     bool operationInFlight = false;
+    bool pendingIsOperation = false;
     QString pendingAction;
     QJsonObject pendingArgs;
     QString localError;
@@ -81,7 +83,13 @@ private:
     QPushButton *jobStart = nullptr;
     QPushButton *jobStop = nullptr;
     QPushButton *jobRefresh = nullptr;
+    QPushButton *jobNewTerminal = nullptr;
+    QPushButton *jobSend = nullptr;
+    QPushButton *jobCtrlC = nullptr;
+    QLineEdit *jobInput = nullptr;
     QString selectedJob;
+    QString jobSignature;
+    QString terminalPending;
     qint64 jobLogOffset = 0;
 };
 }

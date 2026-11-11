@@ -286,7 +286,13 @@ QJsonObject JobManager::start(const QJsonObject &args) {
     loadConfig();
     if (runningCount() >= maxJobs) return fail("Too many running jobs");
     JobSpec spec;
-    if (args.contains("preset")) {
+    if (args.value("shell").toBool()) {
+        spec.command = qEnvironmentVariable("SHELL");
+        if (spec.command.isEmpty() || !QFileInfo(spec.command).isExecutable()) spec.command = "/bin/sh";
+        spec.args = {"-i"};
+        spec.name = "terminal";
+        spec.env << "TERM=xterm-256color" << "COLORTERM=truecolor";
+    } else if (args.contains("preset")) {
         if (!args.value("preset").isString() || args.value("preset").toString().isEmpty()) return fail("preset must be a name");
         const auto wanted = args.value("preset").toString();
         bool found = false;
@@ -362,6 +368,20 @@ QJsonObject JobManager::stop(const QString &id) {
     persist();
     emit jobChanged(id);
     auto o = snapshot(job); o.insert("ok", true); return o;
+}
+
+QJsonObject JobManager::input(const QJsonObject &args) {
+    const auto id = args.value("id").toString();
+    if (!records.contains(id)) return fail("Unknown job");
+    auto &job = records[id];
+    if (job.masterFd < 0 || (job.status != "Running" && job.status != "Starting")) return fail("Job is not running");
+    const auto text = args.value("data").toString();
+    if (text.isEmpty()) return fail("data is required");
+    const auto bytes = text.toUtf8();
+    if (bytes.size() > 4096) return fail("Input is too large");
+    const auto written = ::write(job.masterFd, bytes.constData(), size_t(bytes.size()));
+    if (written != bytes.size()) return fail("Cannot write to the job");
+    return {{"ok", true}, {"id", id}, {"written", int(written)}};
 }
 
 QJsonObject JobManager::log(const QJsonObject &args) {

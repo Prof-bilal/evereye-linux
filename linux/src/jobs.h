@@ -29,6 +29,7 @@ public:
     QJsonObject get(const QString &id) const;
     QJsonObject start(const QJsonObject &args);
     QJsonObject stop(const QString &id);
+    QJsonObject input(const QJsonObject &args);
     QJsonObject log(const QJsonObject &args);
     QJsonObject tasks() const;
     int jobCount() const { return records.size(); }

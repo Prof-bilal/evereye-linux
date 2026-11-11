@@ -9,6 +9,8 @@ start sessions from a phone.
 | Piece | Role |
 |---|---|
 | `evereye run` | Starts a job in a PTY owned by the controller; output is captured live. |
+| `evereye jobs send` | Writes keystrokes/commands to a running job's PTY. |
+| New terminal | Starts an interactive `$SHELL` job you can type into. |
 | Controller (`evereye --daemon`) | Owns job state, logs, and the existing awake session. |
 | `evereye gateway` | Opt-in HTTP + SSE bridge to the controller over the user's session D-Bus. |
 | `mobile/` PWA | Installable phone client served by the gateway or hosted separately. |
@@ -28,7 +30,11 @@ cd linux
 ./evereye run -- claude
 ./evereye jobs
 ./evereye jobs log <id> -f
+./evereye jobs send <id> "ls -la"
 ./evereye jobs stop <id>
+
+# The AI sessions page has a terminal pane: New terminal starts an interactive
+# shell and the input box sends commands to whichever session is selected.
 
 # Start an awake session so the laptop survives a closed lid
 ./evereye start 4h --lid
@@ -106,6 +112,7 @@ All `/api/*` routes require `Authorization: Bearer <token>`.
 | GET | `/api/jobs/<id>/stream` | Live output as Server-Sent Events |
 | POST | `/api/jobs` | Start `{ "preset": "claude" }` or (if allowed) `{ "command": ..., "args": [...] }` |
 | POST | `/api/jobs/<id>/stop` | Terminate the job's process group |
+| POST | `/api/jobs/<id>/input` | `{ "data": "text\\n" }` written to the job's PTY |
 | GET | `/api/tasks` | Configured presets and whether arbitrary commands are allowed |
 | POST | `/api/session/extend` | `{ "seconds": 900 }` |
 | POST | `/api/session/end` | End the awake session |

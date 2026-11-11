@@ -111,6 +111,10 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   color: #cfe6dd;
 }
 
+.terminal-input { display: flex; gap: 8px; }
+.terminal-input input { flex: 1; min-width: 0; font-family: var(--mono); font-size: 13px; }
+.terminal-input button { flex: 0 0 auto; }
+
 footer { padding: 4px 6px 10px; line-height: 1.5; }
 
 @media (min-width: 700px) {

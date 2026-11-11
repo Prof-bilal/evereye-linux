@@ -16,6 +16,7 @@ const seed = () => ({
   ],
 });
 let state = seed();
+let lastInput = "";
 
 const types = {
   ".html": "text/html; charset=utf-8",
@@ -47,7 +48,11 @@ const server = createServer(async (request, response) => {
 
   if (url.pathname === "/api/__reset") {
     state = seed();
+    lastInput = "";
     return json(response, 200, { ok: true });
+  }
+  if (url.pathname === "/api/__lastinput") {
+    return json(response, 200, { ok: true, input: lastInput });
   }
 
   if (url.pathname.startsWith("/api/")) {
@@ -72,18 +77,27 @@ const server = createServer(async (request, response) => {
       state.jobs.unshift(job);
       return json(response, 200, { ok: true, id: "j2", ...job });
     }
-    const match = url.pathname.match(/^\/api\/jobs\/([^/]+)\/(stop|stream)$/);
+    const match = url.pathname.match(/^\/api\/jobs\/([^/]+)\/(stop|stream|input)$/);
     if (match) {
       const job = state.jobs.find((entry) => entry.id === match[1]);
       if (!job) return json(response, 404, { ok: false, error: "Unknown job" });
       if (match[2] === "stop") { job.status = "Killed"; return json(response, 200, { ok: true, ...job }); }
+      if (match[2] === "input") {
+        const body = await new Promise((resolve) => {
+          let raw = "";
+          request.on("data", (chunk) => { raw += chunk; });
+          request.on("end", () => resolve(raw));
+        });
+        try { lastInput = JSON.parse(body).data ?? ""; } catch { lastInput = ""; }
+        return json(response, 200, { ok: true, written: lastInput.length });
+      }
       response.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Access-Control-Allow-Origin": "*",
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
       });
-      response.write(`data: ${JSON.stringify({ ok: true, data: "hello from mock\n", nextOffset: 15, eof: false })}\n\n`);
+      response.write(`data: ${JSON.stringify({ ok: true, data: "\u001b[31mhello from mock\u001b[0m\n", nextOffset: 15, eof: false })}\n\n`);
       setTimeout(() => {
         response.write("event: end\ndata: {}\n\n");
         response.end();

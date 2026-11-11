@@ -20,6 +20,14 @@ function formatDuration(total: number) {
 const statusTone = (status: string) =>
   status === "Running" || status === "Starting" ? "live" : status === "Failed" || status === "Killed" ? "bad" : "idle";
 
+// Terminal data carries colour and cursor control sequences; keep the text.
+const cleanTerminal = (text: string) =>
+  text
+    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "")
+    .replace(/\x1b[@-_]/g, "")
+    .replace(/\r/g, "");
+
 export default function Page() {
   const [config, setConfig] = useState<Config | null>(null);
   const [draftUrl, setDraftUrl] = useState("");
@@ -31,6 +39,7 @@ export default function Page() {
   const [arbitrary, setArbitrary] = useState(false);
   const [selected, setSelected] = useState<string>("");
   const [log, setLog] = useState("");
+  const [entry, setEntry] = useState("");
   const [preset, setPreset] = useState("");
   const [command, setCommand] = useState("");
   const [error, setError] = useState("");
@@ -159,7 +168,7 @@ export default function Page() {
             if (!data || data === "{}") continue;
             try {
               const payload = JSON.parse(data) as { data?: string };
-              if (payload.data) setLog((current) => (current + payload.data).slice(-200000));
+              if (payload.data) setLog((current) => (current + cleanTerminal(payload.data!)).slice(-200000));
             } catch {
               /* keep the frame body on parse failure */
             }
@@ -201,6 +210,22 @@ export default function Page() {
       return null;
     } finally {
       setBusy(false);
+    }
+  };
+
+  const sendInput = async () => {
+    if (!selected || !entry) return;
+    const text = entry;
+    setEntry("");
+    await act(`/api/jobs/${selected}/input`, { data: text + "\n" });
+  };
+
+  const startTerminal = async () => {
+    const started = await act("/api/jobs", { shell: true });
+    if (started?.ok) {
+      const id = String(started.id || "");
+      await refresh();
+      if (id) setSelected(id);
     }
   };
 
@@ -304,7 +329,10 @@ export default function Page() {
         {(!tasks.length || !preset) && arbitrary ? (
           <input value={command} onChange={(event) => setCommand(event.target.value)} placeholder="claude" aria-label="Command" autoCapitalize="off" autoCorrect="off" />
         ) : null}
-        <button className="primary" onClick={startJob} disabled={busy}>Start session</button>
+        <div className="actions">
+          <button className="primary" onClick={startJob} disabled={busy}>Start session</button>
+          <button onClick={startTerminal} disabled={busy}>New terminal</button>
+        </div>
         {!tasks.length ? <p className="muted small">Add presets in <code>~/.config/evereye/tasks.json</code>.</p> : null}
       </section>
 
@@ -331,6 +359,24 @@ export default function Page() {
             <button className="danger small" onClick={() => act(`/api/jobs/${current.id}/stop`)} disabled={busy || !(current.status === "Running" || current.status === "Starting")}>Stop</button>
           </div>
           <pre className="log" ref={logRef} data-testid="log">{log || "Waiting for output…"}</pre>
+          <form
+            className="terminal-input"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void sendInput();
+            }}
+          >
+            <input
+              value={entry}
+              onChange={(event) => setEntry(event.target.value)}
+              placeholder="Type a command and press Enter"
+              aria-label="Terminal input"
+              autoCapitalize="off"
+              autoCorrect="off"
+              autoComplete="off"
+            />
+            <button type="submit" disabled={!entry}>Send</button>
+          </form>
         </section>
       ) : null}
 
