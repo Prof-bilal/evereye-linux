@@ -262,7 +262,9 @@ private:
         const auto first = controller("jobs.log", {{"id", id}, {"offset", 0}, {"limit", 65536}});
         if (!first.value("ok").toBool()) { writeJson(socket, 404, first); return; }
         streamOffset = first.value("nextOffset").toInteger();
-        socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\n\r\n");
+        // No Content-Length and no chunking: the stream is delimited by close,
+        // so never advertise keep-alive here or browsers may not emit chunks.
+        socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n");
         auto payload = jsonBytes(first);
         socket->write("data: " + payload + "\n\n");
         pump = new QTimer(this);
