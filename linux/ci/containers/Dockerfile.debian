@@ -3,19 +3,25 @@ FROM ${BASE_IMAGE}
 # Apt exits 0 even when every index fails to download (for example a DNS blip
 # inside CI), which then reads as "Unable to locate package" for everything.
 # Require a real Packages index; if the stock archive host cannot be resolved,
-# retry against the kernel.org mirror of ubuntu / ubuntu-ports.
+# fall through to mirrors that serve the same archive.
 RUN set -eux; \
+    files=""; \
+    for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources; do \
+        if [ -f "$f" ]; then files="$files $f"; fi; \
+    done; \
+    [ -n "$files" ]; \
     ok=0; \
-    for attempt in 1 2 3 4 5; do \
+    for stage in stock kernel ports-ocf ports-rit; do \
+        case "$stage" in \
+            stock) : ;; \
+            kernel) sed -i -e 's|http://archive.ubuntu.com/ubuntu|http://mirrors.edge.kernel.org/ubuntu|g' \
+                             -e 's|http://security.ubuntu.com/ubuntu|http://mirrors.edge.kernel.org/ubuntu|g' $files ;; \
+            ports-ocf) sed -i -E 's|https?://ports.ubuntu.com/ubuntu-ports|http://mirrors.ocf.berkeley.edu/ubuntu-ports|g' $files ;; \
+            ports-rit) sed -i -E 's|https?://mirrors.ocf.berkeley.edu/ubuntu-ports|http://mirrors.rit.edu/ubuntu-ports|g' $files ;; \
+        esac; \
         apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update || true; \
         if ls /var/lib/apt/lists/*Packages* >/dev/null 2>&1; then ok=1; break; fi; \
-        for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources; do \
-            [ -f "$f" ] || continue; \
-            sed -i -e 's|http://archive.ubuntu.com/ubuntu|http://mirrors.edge.kernel.org/ubuntu|g' \
-                   -e 's|http://security.ubuntu.com/ubuntu|http://mirrors.edge.kernel.org/ubuntu|g' \
-                   -e 's|http://ports.ubuntu.com/ubuntu-ports|http://mirrors.edge.kernel.org/ubuntu-ports|g' "$f"; \
-        done; \
-        sleep 10; \
+        sleep 5; \
     done; \
     [ "$ok" = 1 ]; \
     DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
