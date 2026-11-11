@@ -83,7 +83,10 @@ for target in targets:
     try:
         print('  Building dependency image; log: '+str(directory/'image-build.log'),flush=True)
         with (directory/'image-build.log').open('w') as log:
-            result=subprocess.run(['docker','build','--platform',architecture,'-t',image,'--build-arg','BASE_IMAGE='+target['image'],'-f',str(ROOT/'ci/containers'/('Dockerfile.'+target['recipe'])),str(ROOT/'ci/containers')],stdout=log,stderr=subprocess.STDOUT,timeout=1800)
+            # BuildKit's embedded resolver intermittently fails to resolve distro
+            # archive names while the host resolves them fine; the dependency
+            # build is a CI-only container, so borrow the host's resolver.
+            result=subprocess.run(['docker','build','--network=host','--platform',architecture,'-t',image,'--build-arg','BASE_IMAGE='+target['image'],'-f',str(ROOT/'ci/containers'/('Dockerfile.'+target['recipe'])),str(ROOT/'ci/containers')],stdout=log,stderr=subprocess.STDOUT,timeout=1800)
         if result.returncode: raise RuntimeError('Container dependency build failed')
         item['image_id']=subprocess.check_output(['docker','image','inspect','--format','{{.Id}}',image],text=True).strip()
         subprocess.run(['docker','run','--detach','--name',name,'--platform',architecture,'--mount','type=bind,src='+str(snapshot)+',dst=/src,readonly',image,'python3','-c','import time; time.sleep(86400)'],check=True,stdout=subprocess.DEVNULL)

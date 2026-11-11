@@ -1,13 +1,14 @@
 ARG BASE_IMAGE=ubuntu:22.04
 FROM ${BASE_IMAGE}
-# Archive mirrors intermittently answer an update with a partial or empty index,
-# which surfaces as "Unable to locate package" for every package. Retry the
-# index fetch a few times and fail loudly if it never succeeds.
+# Apt exits 0 even when every index fails to download (for example a DNS blip
+# inside BuildKit), which then reads as "Unable to locate package" for
+# everything. Require a real Packages index and retry the fetch.
 RUN set -eux; \
     ok=0; \
     for attempt in 1 2 3 4 5; do \
-        if apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update; then ok=1; break; fi; \
-        sleep 10; \
+        apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update || true; \
+        if ls /var/lib/apt/lists/*Packages* >/dev/null 2>&1; then ok=1; break; fi; \
+        sleep 15; \
     done; \
     [ "$ok" = 1 ]; \
     DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
