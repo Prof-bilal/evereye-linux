@@ -1,6 +1,7 @@
 ARG BASE_IMAGE=fedora:latest
 FROM ${BASE_IMAGE}
-RUN dnf install -y gcc-c++ make cmake ninja-build qt6-qtbase-devel qt6-qtwayland-devel \
+RUN dnf install -y --setopt=retries=5 --setopt=timeout=60 \
+    gcc-c++ make cmake ninja-build qt6-qtbase-devel qt6-qtwayland-devel \
     dbus \
     upower dbus-daemon glib2 python3 desktop-file-utils appstream xorg-x11-server-Xvfb xorg-x11-xauth \
     weston dejavu-sans-fonts file binutils rpm-build && dnf clean all

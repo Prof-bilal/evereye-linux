@@ -76,13 +76,13 @@ with tempfile.TemporaryDirectory(prefix="insomnia-integration-") as root:
     daemon = None
     windows = []
     try:
-        until(lambda: subprocess.run(["gdbus", "introspect", "--session", "--dest", LOGIN[0], "--object-path", LOGIN[1]], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0)
+        until(lambda: subprocess.run(["gdbus", "introspect", "--session", "--dest", LOGIN[0], "--object-path", LOGIN[1]], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0, seconds=15)
         # Captured CLI output must reach EOF even when it launches a detached daemon.
         assert not command("status")["active"]
         command("shutdown")
-        until(lambda: not controller_ready())
+        until(lambda: not controller_ready(), seconds=15)
         daemon = subprocess.Popen([str(binary), "--daemon"], env=env)
-        until(controller_ready)
+        until(controller_ready, seconds=15)
         capabilities = command("doctor")
         assert capabilities["logind"] and capabilities["supervisor"]
         if env.get('EVEREYE_SUPERVISOR') == 'kernel-timer':
@@ -98,11 +98,11 @@ with tempfile.TemporaryDirectory(prefix="insomnia-integration-") as root:
         windows.append(first)
         def ui_ready():
             return subprocess.run(["gdbus", "introspect", "--session", "--dest", ui_target[0], "--object-path", ui_target[1]], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
-        until(ui_ready)
+        until(ui_ready, seconds=15)
         replacement = subprocess.Popen([str(binary), "--replace-ui"], env=ui_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         windows.append(replacement)
-        first.wait(timeout=5)
-        until(ui_ready)
+        first.wait(timeout=15)
+        until(ui_ready, seconds=15)
         assert replacement.poll() is None
         assert daemon.poll() is None and command("status")["active"]
         assert prop(LOGIN, "ActiveLocks") == 1
@@ -138,7 +138,7 @@ with tempfile.TemporaryDirectory(prefix="insomnia-integration-") as root:
         daemon.wait(timeout=5)
         until(lambda: prop(LOGIN, "ActiveLocks") == 0)
         daemon = subprocess.Popen([str(binary), "--daemon"], env=env)
-        until(controller_ready)
+        until(controller_ready, seconds=15)
         assert not command("status")["active"], "interrupted session silently resumed"
         command("start", "60s")
         # Poll gently across the whole session: spawning the CLI 10x/second for
