@@ -1,10 +1,13 @@
 #include "window.h"
 #include "core.h"
-#include "terminal.h"
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDesktopServices>
 #include <QDir>
-#include <QProcess>
+#include <QFile>
+#include <QJsonDocument>
+#include <QTcpSocket>
+#include <QUrl>
 #include <QBoxLayout>
 #include <QCheckBox>
 #include <QCloseEvent>
@@ -725,16 +728,29 @@ void Window::acceptReply(const QString &action, const QJsonObject &reply) {
 }
 void Window::launchTerminal(const QString &id) {
     if (id.isEmpty()) return;
-    const auto cwd = jobCwd.value(id, QDir::homePath());
-    const auto title = "EverEye · " + jobName.value(id, id);
-    const auto launch = terminalCommand(QCoreApplication::applicationFilePath(), {"attach", id}, cwd, title);
-    if (!launch.ok) {
-        localError = "No terminal emulator found. Run: evereye attach " + id;
+    auto configBase = qEnvironmentVariable("XDG_CONFIG_HOME");
+    if (configBase.isEmpty() || !QDir::isAbsolutePath(configBase)) configBase = QDir::homePath() + "/.config";
+    QString host = "127.0.0.1";
+    int port = 8737;
+    QFile config(configBase + "/evereye/gateway.json");
+    if (config.open(QIODevice::ReadOnly)) {
+        const auto settings = QJsonDocument::fromJson(config.readAll()).object();
+        const auto bind = settings.value("bind").toString("127.0.0.1");
+        if (bind == "::") host = "::1";
+        else if (!bind.isEmpty() && bind != "0.0.0.0") host = bind;
+        port = settings.value("port").toInt(8737);
+    }
+    QTcpSocket probe;
+    probe.connectToHost(host, quint16(port));
+    if (!probe.waitForConnected(300)) {
+        localError = "Start the web gateway first: evereye gateway";
         render(current);
         return;
     }
-    if (!QProcess::startDetached(launch.program, launch.args, cwd)) {
-        localError = "Could not open " + launch.program;
+    probe.abort();
+    const auto url = QUrl(QString("http://%1:%2/terminal/?id=%3").arg(host).arg(port).arg(id));
+    if (!QDesktopServices::openUrl(url)) {
+        localError = "Could not open a browser. Visit " + url.toString();
         render(current);
     }
 }

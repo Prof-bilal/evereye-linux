@@ -5,10 +5,12 @@ Run this under a private bus so it never touches the live user session:
 
     dbus-run-session -- python3 scripts/test-gateway.py
 """
+import base64
 import json
 import os
 import select
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -61,6 +63,66 @@ def check(condition, label):
     if not condition:
         sys.exit("FAIL: " + label)
     print("ok -", label)
+
+
+def ws_connect(port, path, token):
+    sock = socket.create_connection(("127.0.0.1", port), timeout=8)
+    key = base64.b64encode(os.urandom(16)).decode()
+    request = (
+        f"GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+        "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+        f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n"
+        f"Sec-WebSocket-Protocol: evereye, {token}\r\n\r\n"
+    )
+    sock.sendall(request.encode())
+    data = b""
+    while b"\r\n\r\n" not in data:
+        chunk = sock.recv(4096)
+        if not chunk:
+            break
+        data += chunk
+    head, _, rest = data.partition(b"\r\n\r\n")
+    return sock, head, rest
+
+
+def ws_send(sock, opcode, payload):
+    mask = os.urandom(4)
+    header = bytes([0x80 | opcode])
+    length = len(payload)
+    if length < 126:
+        header += bytes([0x80 | length])
+    elif length <= 0xFFFF:
+        header += bytes([0x80 | 126]) + struct.pack(">H", length)
+    else:
+        header += bytes([0x80 | 127]) + struct.pack(">Q", length)
+    sock.sendall(header + mask + bytes(byte ^ mask[i % 4] for i, byte in enumerate(payload)))
+
+
+def ws_read(sock, buffer):
+    def ensure(size):
+        nonlocal buffer
+        while len(buffer) < size:
+            chunk = sock.recv(4096)
+            if not chunk:
+                raise EOFError
+            buffer += chunk
+
+    ensure(2)
+    first, second = buffer[0], buffer[1]
+    length = second & 0x7F
+    offset = 2
+    if length == 126:
+        ensure(4)
+        length = struct.unpack(">H", buffer[2:4])[0]
+        offset = 4
+    elif length == 127:
+        ensure(10)
+        length = struct.unpack(">Q", buffer[2:10])[0]
+        offset = 10
+    ensure(offset + length)
+    payload = buffer[offset:offset + length]
+    buffer = buffer[offset + length:]
+    return first & 0x0F, payload, buffer
 
 
 def tls_refusal(tmp):
@@ -163,6 +225,27 @@ def live(tmp):
         attach.terminate()
         attach.wait(timeout=5)
         check(imported, "evereye attach bridges this terminal to the job")
+
+        sock, head, rest = ws_connect(port, f"/api/jobs/{echo_id}/terminal", token)
+        check(head.startswith(b"HTTP/1.1 101"), "WebSocket terminal upgrade succeeds")
+        sock.settimeout(6)
+        ws_send(sock, 0x2, b"ws-pty\n")
+        streamed = False
+        for _ in range(40):
+            opcode, payload, rest = ws_read(sock, rest)
+            if b"ws-pty" in payload:
+                streamed = True
+                break
+            if opcode == 0x8:
+                break
+        check(streamed, "WebSocket streams PTY output")
+        ws_send(sock, 0x1, json.dumps({"type": "resize", "cols": 100, "rows": 30}).encode())
+        ws_send(sock, 0x8, b"\x03\xe8")
+        sock.close()
+
+        bad, bad_head, _ = ws_connect(port, f"/api/jobs/{echo_id}/terminal", "wrong-token")
+        check(b" 401 " in bad_head.split(b"\r\n")[0], "WebSocket rejects a wrong token")
+        bad.close()
 
         request(base + f"/api/jobs/{echo_id}/stop", token, "POST")
     finally:

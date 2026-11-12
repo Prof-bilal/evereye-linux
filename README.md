@@ -71,7 +71,7 @@ evereye run -- claude          # own the agent in a PTY, captured live
 evereye jobs                   # list running and finished sessions
 evereye jobs log <id> -f       # follow output
 evereye jobs send <id> "ls"    # type into a running job
-evereye attach <id>            # open a real terminal on the session
+evereye attach <id>            # local terminal bridge (the app uses xterm.js)
 evereye jobs stop <id>
 evereye gateway                # opt-in HTTP + SSE bridge for the PWA
 ```

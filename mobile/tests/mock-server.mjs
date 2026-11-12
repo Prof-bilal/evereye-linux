@@ -1,5 +1,6 @@
 // Minimal stand-in for the EverEye gateway: serves the exported PWA and a
 // small stateful API so Playwright can exercise the real page without a laptop.
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
@@ -109,7 +110,13 @@ const server = createServer(async (request, response) => {
 
   let path = normalize(url.pathname).replace(/^(\.\.(\/|\\|$))+/, "");
   if (path === "/" || path === "") path = "/index.html";
-  const file = join(root, path);
+  if (path.endsWith("/")) path += "index.html";
+  let file = join(root, path);
+  try {
+    await stat(file);
+  } catch {
+    if (!extname(path)) file = join(root, path, "index.html");
+  }
   try {
     const info = await stat(file);
     if (!info.isFile()) throw new Error("not a file");
@@ -126,6 +133,24 @@ const server = createServer(async (request, response) => {
       response.end("Build the app first: npm run build");
     }
   }
+});
+
+// Minimal WebSocket endpoint for the terminal page: complete the handshake,
+// then push one binary frame so the view has something to render.
+server.on("upgrade", (request, socket) => {
+  const key = request.headers["sec-websocket-key"];
+  if (!key) { socket.destroy(); return; }
+  const accept = createHash("sha1")
+    .update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+    .digest("base64");
+  socket.write(
+    "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+    `Sec-WebSocket-Accept: ${accept}\r\nSec-WebSocket-Protocol: evereye\r\n\r\n`
+  );
+  const payload = Buffer.from("hello from ws\n");
+  socket.write(Buffer.concat([Buffer.from([0x82, payload.length]), payload]));
+  socket.on("data", () => {});
+  socket.on("error", () => {});
 });
 
 server.listen(port, "127.0.0.1", () => console.log(`mock gateway on http://127.0.0.1:${port}`));

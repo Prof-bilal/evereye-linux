@@ -12,7 +12,7 @@ find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets DBus Concurrent Networ
 if(BUILD_TESTING)
     find_package(Qt6 6.2 REQUIRED COMPONENTS Test)
 endif()
-set(EVEREYE_SOURCES src/core.cpp src/platform.cpp src/guardian.cpp src/service.cpp src/window.cpp src/jobs.cpp src/terminal.cpp)
+set(EVEREYE_SOURCES src/core.cpp src/platform.cpp src/guardian.cpp src/service.cpp src/window.cpp src/jobs.cpp src/websocket.cpp)
 add_executable(evereye src/main.cpp src/gateway.cpp ${EVEREYE_SOURCES})
 target_link_libraries(evereye PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::DBus Qt6::Concurrent Qt6::Network rt util)
 target_compile_options(evereye PRIVATE -Wall -Wextra -Wpedantic)

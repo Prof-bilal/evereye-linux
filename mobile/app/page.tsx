@@ -356,7 +356,10 @@ export default function Page() {
         <section className="card">
           <div className="row space">
             <span className="muted">OUTPUT · {current.name}</span>
-            <button className="danger small" onClick={() => act(`/api/jobs/${current.id}/stop`)} disabled={busy || !(current.status === "Running" || current.status === "Starting")}>Stop</button>
+            <span className="actions">
+              <a className="link-button small" href={`/terminal/?id=${encodeURIComponent(current.id)}`}>Terminal</a>
+              <button className="danger small" onClick={() => act(`/api/jobs/${current.id}/stop`)} disabled={busy || !(current.status === "Running" || current.status === "Starting")}>Stop</button>
+            </span>
           </div>
           <pre className="log" ref={logRef} data-testid="log">{log || "Waiting for output…"}</pre>
           <form

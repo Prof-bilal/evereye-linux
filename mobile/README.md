@@ -33,6 +33,8 @@ to the current origin and you only need the token.
 - Live awake-session countdown with extend and end.
 - Jobs list with status, start from presets, stop a job.
 - Live terminal output over Server-Sent Events (the token is sent as a header, never in a URL).
+- A full xterm.js terminal at `/terminal/?id=<job>` over a WebSocket PTY; the
+  token is sent as a WebSocket subprotocol, not in the URL.
 - A local notification when a job finishes while the app is open.
 
 Notifications for a locked phone come from the gateway's `notify` webhook (for example

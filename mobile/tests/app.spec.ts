@@ -27,6 +27,15 @@ test("selecting a job streams its output without escape codes", async ({ page })
   await expect(page.getByTestId("log")).not.toContainText("\u001b[");
 });
 
+test("terminal page connects over WebSocket and renders xterm", async ({ page }) => {
+  await page.addInitScript((value) => {
+    localStorage.setItem("evereye.mobile.config", JSON.stringify(value));
+  }, config);
+  await page.goto("/terminal/?id=j1");
+  await expect(page.getByText("connected", { exact: true })).toBeVisible();
+  await expect(page.locator(".xterm")).toBeVisible();
+});
+
 test("typing in the terminal sends input to the job", async ({ page, request }) => {
   await connect(page);
   await page.getByRole("button", { name: /claude/ }).first().click();
