@@ -9,7 +9,7 @@
 class QLabel; class QPushButton; class QSpinBox; class QCheckBox; class QSystemTrayIcon;
 class QScrollArea; class QBoxLayout; class QResizeEvent;
 class QStackedWidget; class QComboBox;
-class QDialog; class QToolButton; class QPlainTextEdit; class QListWidget; class QLineEdit; class QTabBar;
+class QDialog; class QToolButton; class QPlainTextEdit; class QListWidget; class QLineEdit; class QTabBar; class QProgressBar;
 namespace insomnia {
 class TerminalView;
 QIcon eyeIcon(bool active = false);
@@ -72,8 +72,14 @@ private:
     QWidget *sidebar = nullptr;
     QStackedWidget *pages = nullptr;
     QComboBox *pagePicker = nullptr; QComboBox *extension = nullptr;
-    QLabel *breadcrumb = nullptr; QLabel *headline = nullptr; QLabel *subtitle = nullptr;
+    QLabel *breadcrumb = nullptr;
     QLabel *endsAt = nullptr; QLabel *batterySummary = nullptr; QLabel *lidSummary = nullptr; QLabel *recoverySummary = nullptr;
+    QLabel *temperatureSummary = nullptr;
+    QLabel *sessionStatus = nullptr; QLabel *sessionStarted = nullptr; QLabel *sessionTimer = nullptr;
+    QProgressBar *sessionProgress = nullptr; QPushButton *currentEnd = nullptr;
+    QComboBox *lidPolicy = nullptr;
+    QCheckBox *agentKeepSwitch = nullptr;
+    bool agentKeepStarted = false;
     QLabel *serviceStatus = nullptr; QLabel *sleepSummary = nullptr;
     QCheckBox *sessionToggle = nullptr;
     QPushButton *overviewStart = nullptr;

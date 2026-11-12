@@ -13,8 +13,12 @@
 #include <QUrl>
 #include <QBoxLayout>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QConicalGradient>
+#include <QProgressBar>
+#include <QSettings>
 #include <QStackedWidget>
 #include <QDateTime>
 #include <QDialog>
@@ -51,6 +55,11 @@
 #include <QScreen>
 #include <QCursor>
 #include <QtConcurrent/QtConcurrentRun>
+#include <cmath>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 namespace insomnia {
 namespace {
@@ -102,13 +111,30 @@ protected:
 class TimerFace final : public QFrame {
 protected:
     void paintEvent(QPaintEvent *event) override {
-        QFrame::paintEvent(event); QPainter p(this); p.setRenderHint(QPainter::Antialiasing);
-        const QRectF track(28,height()-26,width()-56,3);
-        p.setPen(Qt::NoPen); p.setBrush(QColor("#343b3b")); p.drawRoundedRect(track,1.5,1.5);
-        if(property("active").toBool()) {
-            p.setBrush(QColor("#65bda7"));
-            p.drawRoundedRect(QRectF(track.left(),track.top(),track.width()*qBound(0.0,property("progress").toDouble(),1.0),track.height()),1.5,1.5);
-        }
+        QFrame::paintEvent(event);
+        QPainter p(this); p.setRenderHint(QPainter::Antialiasing);
+        const QRectF area = rect().adjusted(14, 14, -14, -14);
+        const qreal side = qMin(area.width(), area.height());
+        if (side <= 0) return;
+        const QRectF ring(area.center().x() - side / 2, area.center().y() - side / 2, side, side);
+        const qreal stroke = qMax(9.0, side * 0.055);
+        const QRectF track = ring.adjusted(stroke / 2, stroke / 2, -stroke / 2, -stroke / 2);
+        const bool active = property("active").toBool();
+        const qreal progress = active ? qBound(0.0, property("progress").toDouble(), 1.0) : 0.86;
+        QConicalGradient gradient(ring.center(), 90);
+        gradient.setColorAt(0.0, QColor("#8ff0c5"));
+        gradient.setColorAt(0.45, QColor("#2fbd87"));
+        gradient.setColorAt(0.75, QColor("#6fe3b0"));
+        gradient.setColorAt(1.0, QColor("#8ff0c5"));
+        p.setBrush(Qt::NoBrush);
+        p.setPen(QPen(QColor("#16241d"), stroke, Qt::SolidLine, Qt::RoundCap));
+        p.drawEllipse(track);
+        p.setPen(QPen(QBrush(gradient), stroke + 10, Qt::SolidLine, Qt::RoundCap));
+        p.setOpacity(0.10);
+        p.drawArc(track, 90 * 16, -int(progress * 360 * 16));
+        p.setOpacity(1.0);
+        p.setPen(QPen(QBrush(gradient), stroke, Qt::SolidLine, Qt::RoundCap));
+        p.drawArc(track, 90 * 16, -int(progress * 360 * 16));
     }
 };
 class QuickPanelSurface final : public QWidget {
@@ -162,6 +188,113 @@ QWidget *rule(const QString &title, const QString &description, QCheckBox *contr
     control->setAccessibleName(title); control->setAccessibleDescription(description); return row;
 }
 }
+namespace {
+QPixmap glyph(const QString &kind, const QColor &color, int size = 18) {
+    QPixmap pixmap(size, size);
+    pixmap.fill(Qt::transparent);
+    QPainter p(&pixmap);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.scale(size / 18.0, size / 18.0);
+    QPen pen(color, 1.7);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    p.setPen(pen);
+    p.setBrush(Qt::NoBrush);
+    if (kind == "home") {
+        QPainterPath roof; roof.moveTo(2.5, 9); roof.lineTo(9, 3); roof.lineTo(15.5, 9);
+        p.drawPath(roof); p.drawRect(QRectF(4.5, 9, 9, 6.5));
+    } else if (kind == "clock") {
+        p.drawEllipse(QRectF(3, 3, 12, 12)); p.drawLine(QPointF(9, 5.5), QPointF(9, 9)); p.drawLine(QPointF(9, 9), QPointF(12, 10.5));
+    } else if (kind == "lid") {
+        p.drawRoundedRect(QRectF(3, 4, 12, 8.5), 1.5, 1.5); p.drawLine(QPointF(2.5, 13), QPointF(15.5, 13));
+    } else if (kind == "gear") {
+        p.drawEllipse(QRectF(6.3, 6.3, 5.4, 5.4));
+        for (int i = 0; i < 8; ++i) {
+            const double angle = i * M_PI / 4;
+            p.drawLine(QPointF(9 + std::cos(angle) * 6.4, 9 + std::sin(angle) * 6.4),
+                       QPointF(9 + std::cos(angle) * 7.8, 9 + std::sin(angle) * 7.8));
+        }
+    } else if (kind == "terminal") {
+        p.drawRoundedRect(QRectF(2.5, 3.5, 13, 11), 2, 2);
+        p.drawLine(QPointF(5, 6.5), QPointF(7.5, 9)); p.drawLine(QPointF(7.5, 9), QPointF(5, 11.5));
+        p.drawLine(QPointF(9.5, 11.5), QPointF(12.5, 11.5));
+    } else if (kind == "spark") {
+        QPainterPath star;
+        star.moveTo(9, 2); star.lineTo(10.7, 7.3); star.lineTo(16, 9); star.lineTo(10.7, 10.7);
+        star.lineTo(9, 16); star.lineTo(7.3, 10.7); star.lineTo(2, 9); star.lineTo(7.3, 7.3);
+        star.closeSubpath(); p.drawPath(star);
+    } else if (kind == "info") {
+        p.drawEllipse(QRectF(3, 3, 12, 12)); p.drawLine(QPointF(9, 8), QPointF(9, 12.5));
+        p.setBrush(color); p.drawEllipse(QPointF(9, 5.8), 0.7, 0.7);
+    } else if (kind == "battery") {
+        p.drawRoundedRect(QRectF(2, 6, 11.5, 6.5), 1, 1); p.drawLine(QPointF(14.5, 8), QPointF(14.5, 10.5));
+        p.drawLine(QPointF(4, 9.2), QPointF(9, 9.2));
+    } else if (kind == "temp") {
+        QPainterPath tube; tube.moveTo(7.5, 3.5); tube.lineTo(7.5, 10.5);
+        tube.arcTo(QRectF(5.5, 10, 5, 5), 180, 180); tube.lineTo(10.5, 3.5);
+        tube.arcTo(QRectF(7.5, 2, 3, 3), 0, 180); p.drawPath(tube);
+        p.setBrush(color); p.drawEllipse(QPointF(9, 12.7), 1.4, 1.4);
+    } else if (kind == "shield") {
+        QPainterPath shield; shield.moveTo(9, 2.2); shield.lineTo(15, 4.8); shield.lineTo(15, 8.5);
+        shield.cubicTo(15, 12.2, 12.4, 14.8, 9, 16); shield.cubicTo(5.6, 14.8, 3, 12.2, 3, 8.5);
+        shield.lineTo(3, 4.8); shield.closeSubpath(); p.drawPath(shield);
+    } else if (kind == "pause") {
+        p.drawRoundedRect(QRectF(5, 4, 2.6, 10), 1, 1); p.drawRoundedRect(QRectF(10.4, 4, 2.6, 10), 1, 1);
+    } else if (kind == "stop") {
+        p.setPen(Qt::NoPen); p.setBrush(color); p.drawRoundedRect(QRectF(5, 5, 8, 8), 1.5, 1.5);
+    } else if (kind == "power") {
+        p.drawArc(QRectF(3, 3.5, 12, 12), 120 * 16, 300 * 16); p.drawLine(QPointF(9, 2), QPointF(9, 8.5));
+    }
+    return pixmap;
+}
+QIcon navIcon(const QString &kind) {
+    QIcon icon;
+    icon.addPixmap(glyph(kind, QColor("#7f978c")), QIcon::Normal, QIcon::Off);
+    icon.addPixmap(glyph(kind, QColor("#8ff0c5")), QIcon::Normal, QIcon::On);
+    icon.addPixmap(glyph(kind, QColor("#8ff0c5")), QIcon::Active, QIcon::On);
+    return icon;
+}
+QWidget *iconBox(const QString &kind) {
+    auto *box = new QFrame;
+    box->setObjectName("iconBox");
+    box->setFixedSize(30, 30);
+    auto *layout = new QVBoxLayout(box);
+    layout->setContentsMargins(0, 0, 0, 0);
+    auto *label = new QLabel;
+    label->setPixmap(glyph(kind, QColor("#6fe3b0"), 17));
+    label->setAlignment(Qt::AlignCenter);
+    layout->addWidget(label);
+    return box;
+}
+QString temperatureText() {
+    double hottest = -1;
+    QDir thermal("/sys/class/thermal");
+    for (const auto &zone : thermal.entryList({"thermal_zone*"}, QDir::Dirs | QDir::NoDotAndDotDot)) {
+        QFile file("/sys/class/thermal/" + zone + "/temp");
+        if (!file.open(QIODevice::ReadOnly)) continue;
+        bool ok = false;
+        const double milli = file.readAll().trimmed().toDouble(&ok);
+        if (!ok) continue;
+        const double celsius = milli / 1000.0;
+        if (celsius > 0 && celsius < 150) hottest = qMax(hottest, celsius);
+    }
+    if (hottest < 0) {
+        QDir hwmon("/sys/class/hwmon");
+        for (const auto &dir : hwmon.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+            for (int index = 1; index <= 6; ++index) {
+                QFile file("/sys/class/hwmon/" + dir + QString("/temp%1_input").arg(index));
+                if (!file.open(QIODevice::ReadOnly)) continue;
+                bool ok = false;
+                const double milli = file.readAll().trimmed().toDouble(&ok);
+                if (!ok) continue;
+                const double celsius = milli / 1000.0;
+                if (celsius > 0 && celsius < 150) hottest = qMax(hottest, celsius);
+            }
+        }
+    }
+    return hottest > 0 ? QString("%1°C").arg(hottest, 0, 'f', 0) : QString("—");
+}
+}
 QIcon eyeIcon(bool active) {
     QPixmap image(128,128); image.fill(Qt::transparent); QPainter p(&image); p.setRenderHint(QPainter::Antialiasing);
     p.setPen(Qt::NoPen); p.setBrush(QColor(active?"#377e6e":"#495351")); p.drawRoundedRect(QRectF(4,4,120,120),26,26);
@@ -176,148 +309,214 @@ Window::Window(Client c, bool demonstration, bool background)
     setAttribute(Qt::WA_TranslucentBackground, true);
     setMinimumSize(360, 340); resize(1118, 650);
     setStyleSheet(R"(
-        QWidget { color: #f4f6ff; font-family: "Inter", "Noto Sans", sans-serif; font-size: 13px; }
+        QWidget { color: #e7f3ed; font-family: "Inter", "Noto Sans", sans-serif; font-size: 13px; }
         QWidget#evereyeWindow { background: transparent; }
-        QFrame#shell { background: #191d1e; border: 1px solid #343b3c; border-radius: 12px; }
-        QFrame#sidebar { background: #161a1b; border: 0; border-right: 1px solid #303738; border-top-left-radius: 12px; border-bottom-left-radius: 12px; }
-        QFrame#dashboardCard, QFrame#timerFace, QFrame#protectionCard { background: #202627; border: 1px solid #343c3d; border-radius: 8px; }
+        QFrame#shell { background: #090e0c; border: 1px solid #1b2721; border-radius: 14px; }
+        QFrame#sidebar { background: #0b100e; border: 0; border-right: 1px solid #17231d; border-top-left-radius: 14px; border-bottom-left-radius: 14px; }
+        QFrame#dashboardCard, QFrame#timerFace, QFrame#protectionCard, QFrame#navStatus { background: #0f1613; border: 1px solid #1c2a23; border-radius: 12px; }
+        QFrame#iconBox { background: #11251d; border: 1px solid #1d3a2e; border-radius: 8px; }
         QLabel, QStackedWidget, QWidget#scrollCanvas, QWidget#page { background: transparent; border: 0; }
         QLabel#appName { font-size: 19px; font-weight: 600; }
-        QLabel#linux { color: #8c9996; font-size: 9px; font-weight: 500; }
-        QLabel#headline { font-size: 29px; font-weight: 700; letter-spacing: -0.8px; }
-        QLabel#sectionTitle { font-size: 18px; font-weight: 600; }
-        QLabel#eyebrow { color: #9baaa5; font-size: 11px; font-weight: 500; letter-spacing: 1px; }
-        QLabel#muted, QLabel#detail, QLabel#selectionLabel { color: #a5b1ae; font-size: 13px; }
-        QLabel#small { color: #929f9c; font-size: 11px; }
+        QLabel#linux { color: #6f867b; font-size: 9px; font-weight: 500; }
+        QLabel#headline { font-size: 26px; font-weight: 650; letter-spacing: -0.6px; }
+        QLabel#sectionTitle { font-size: 20px; font-weight: 600; }
+        QLabel#eyebrow { color: #7f9a8e; font-size: 10px; font-weight: 500; letter-spacing: 1.4px; }
+        QLabel#muted, QLabel#detail, QLabel#selectionLabel { color: #8ea49a; font-size: 13px; }
+        QLabel#small { color: #7c9187; font-size: 11px; }
         QLabel#ruleTitle, QLabel#protectionValue { font-size: 14px; font-weight: 600; }
-        QLabel#countdown { font-family: "DejaVu Sans Mono", monospace; font-size: 46px; font-weight: 500; letter-spacing: -1px; }
-        QLabel#endsAt { color: #8dcab8; font-size: 12px; }
-        QLabel#badge { color: #a8cfbf; background: #24332e; border: 1px solid #3c554a; border-radius: 5px; padding: 6px 10px; font-size: 11px; }
-        QLabel#badge[offline="true"] { color: #ffd6ad; border-color: #98765c; }
-        QLabel#error { background: #483c36; color: #ffe0bf; border: 1px solid #a68165; border-radius: 10px; padding: 12px; }
-        QSpinBox { background: #202627; color: #f4f6ff; border: 1px solid #495550; border-radius: 10px; padding: 9px 4px; min-height: 24px; font-size: 20px; selection-background-color: #377e6e; }
-        QSpinBox:focus { border: 2px solid #83c7b1; padding: 8px 3px; }
-        QSpinBox:disabled { color: #98a39f; border-color: #39433f; }
-        QSpinBox QLineEdit { color: #f4f6ff; background: transparent; border: 0; padding: 0; font-size: 20px; }
-        QPushButton { background: rgba(255,255,255,12); color: #eef2fc; border: 1px solid #48534f; border-radius: 6px; padding: 11px 14px; font-weight: 600; }
-        QPushButton:hover { background: rgba(255,255,255,28); border-color: #71887d; }
-        QPushButton:focus { border: 2px solid #83c7b1; padding: 10px 13px; }
-        QPushButton:disabled { color: #929e99; background: rgba(255,255,255,5); border-color: #39433f; }
-        QPushButton#primary, QPushButton#overviewStart, QPushButton#newTerminal { background: #83c7b1; color: #10251e; border: 1px solid #83c7b1; padding: 12px 14px; border-radius: 6px; }
-        QPushButton#primary:hover, QPushButton#overviewStart:hover, QPushButton#newTerminal:hover { background: #a0d8c5; }
-        QPushButton#end { background: #382828; color: #e3b6af; border: 1px solid #74504b; padding: 12px 14px; border-radius: 6px; }
-        QPushButton#end:hover { background: #4b302d; }
-        QPushButton#primary:disabled, QPushButton#end:disabled, QPushButton#overviewStart:disabled { background: #2c3432; color: #98a39f; border-color: #39423f; }
-        QPushButton[nav="true"] { background: transparent; border: 1px solid transparent; color: #a5b1ae; text-align: left; font-weight: 400; padding: 15px 16px; }
-        QPushButton[nav="true"]:checked { background: #283330; color: #c2e0d3; border-color: #3b4b44; font-weight: 600; }
-        QPushButton[nav="true"]:hover { background: rgba(255,255,255,14); }
-        QPushButton[quiet="true"] { color: #a1ccba; background: transparent; border-color: transparent; padding: 7px; font-size: 12px; }
-        QComboBox { color: #f7f8ff; background: transparent; border: 0; font-size: 19px; font-weight: 600; padding: 0 24px 0 0; min-height: 29px; }
+        QLabel#countdown { font-family: "Inter", "Noto Sans", sans-serif; font-size: 46px; font-weight: 500; letter-spacing: 1px; }
+        QLabel#endsAt { color: #63d8a6; font-size: 12px; }
+        QLabel#badge { color: #9fe7c6; background: #10231c; border: 1px solid #1f4939; border-radius: 9px; padding: 5px 10px; font-size: 11px; }
+        QLabel#badge[offline="true"] { color: #ffd6ad; border-color: #7a5c45; }
+        QLabel#error { background: #2a1c17; color: #ffd8c2; border: 1px solid #6f4634; border-radius: 10px; padding: 12px; }
+        QLabel#sessionTimer { font-family: "Inter", "Noto Sans", sans-serif; font-size: 30px; font-weight: 500; letter-spacing: 0.5px; }
+        QLabel#statusPill { color: #8ff0c5; background: #10231c; border: 1px solid #1f4939; border-radius: 8px; padding: 3px 8px; font-size: 10px; font-weight: 600; }
+        QSpinBox { background: #0d1512; color: #e7f3ed; border: 1px solid #22332b; border-radius: 9px; padding: 8px 6px; min-height: 22px; font-size: 16px; selection-background-color: #1f5a44; }
+        QSpinBox:focus { border: 1px solid #5fdcae; }
+        QSpinBox:disabled { color: #6f8078; border-color: #1a2620; }
+        QSpinBox QLineEdit { color: #e7f3ed; background: transparent; border: 0; padding: 0; font-size: 16px; }
+        QPushButton { background: #111a16; color: #dcece4; border: 1px solid #22332b; border-radius: 10px; padding: 10px 14px; font-weight: 600; }
+        QPushButton:hover { background: #16231d; border-color: #33483d; }
+        QPushButton:focus { border: 2px solid #5fdcae; padding: 9px 13px; }
+        QPushButton:disabled { color: #6f8078; background: #0d1411; border-color: #1a2620; }
+        QPushButton#primary, QPushButton#overviewStart, QPushButton#newTerminal { background: #6fe3b0; color: #06231a; border: 1px solid #6fe3b0; }
+        QPushButton#primary:hover, QPushButton#overviewStart:hover, QPushButton#newTerminal:hover { background: #8ff0c5; }
+        QPushButton#end { background: #101815; color: #dcece4; border: 1px solid #2a3b32; }
+        QPushButton#end:hover { background: #16231d; }
+        QPushButton#primary:disabled, QPushButton#end:disabled, QPushButton#overviewStart:disabled, QPushButton#newTerminal:disabled { background: #0e1612; color: #667a70; border-color: #1a2620; }
+        QPushButton[nav="true"] { background: transparent; border: 0; color: #8ea49a; text-align: left; font-weight: 500; padding: 10px 12px; border-radius: 9px; }
+        QPushButton[nav="true"]:checked { background: #16241d; color: #c3f4de; border: 0; font-weight: 600; }
+        QPushButton[nav="true"]:hover { background: #121d18; }
+        QPushButton[quiet="true"] { color: #8fe3bf; background: transparent; border-color: transparent; padding: 7px; font-size: 12px; }
+        QComboBox { color: #e7f3ed; background: #0d1512; border: 1px solid #22332b; border-radius: 9px; font-size: 13px; padding: 8px 10px; min-height: 22px; }
         QComboBox::drop-down { border: 0; width: 22px; }
         QComboBox::down-arrow { image: none; }
-        QComboBox QAbstractItemView { background: #252e2b; color: #f4f6ff; selection-background-color: #3c574b; padding: 6px; font-size: 14px; }
-        QToolButton { background: transparent; color: #a6b8b0; border: 0; padding: 3px 8px; font-size: 20px; }
+        QComboBox QAbstractItemView { background: #121c17; color: #e7f3ed; selection-background-color: #1f3b30; padding: 6px; font-size: 13px; border: 1px solid #22332b; }
+        QToolButton { background: transparent; color: #93a99e; border: 0; padding: 4px 8px; font-size: 17px; }
         QToolButton::menu-indicator { image: none; }
-        QTabBar::tab { background: #202627; color: #a5b1ae; border: 1px solid #343c3d; border-radius: 6px; padding: 7px 12px; margin-right: 6px; }
-        QTabBar::tab:selected { background: #283330; color: #c2e0d3; border-color: #3b4b44; }
-        QTabBar::tab:hover { background: #2b3333; }
-        QMenu { background: #252e2b; border: 1px solid #48534f; padding: 6px; }
-        QMenu::item { padding: 9px 14px; } QMenu::item:selected { background: #3c574b; }
+        QTabBar::tab { background: #101a15; color: #8ea49a; border: 1px solid #1e2e26; border-radius: 8px; padding: 7px 12px; margin-right: 6px; }
+        QTabBar::tab:selected { background: #16241d; color: #c3f4de; border-color: #2a4538; }
+        QTabBar::tab:hover { background: #14201a; }
+        QMenu { background: #121c17; border: 1px solid #22332b; padding: 6px; }
+        QMenu::item { padding: 9px 14px; } QMenu::item:selected { background: #1f3b30; }
         QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; border: 0; }
         QScrollBar:vertical { background: transparent; width: 10px; margin: 3px 1px; }
-        QScrollBar::handle:vertical { background: #52675d; min-height: 38px; border-radius: 4px; }
+        QScrollBar::handle:vertical { background: #2c463a; min-height: 38px; border-radius: 4px; }
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
         QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
-        QTextEdit, QPlainTextEdit { background: #202627; color: #eef2fc; border: 1px solid #48534f; padding: 12px; font-family: "DejaVu Sans Mono", monospace; }
-        QListWidget { background: #202627; color: #eef2fc; border: 1px solid #48534f; }
-        QLineEdit { background: #202627; color: #f4f6ff; border: 1px solid #495550; border-radius: 8px; padding: 8px; }
+        QTextEdit, QPlainTextEdit { background: #0b1210; color: #dcece4; border: 1px solid #22332b; padding: 12px; font-family: "DejaVu Sans Mono", monospace; border-radius: 10px; }
+        QListWidget { background: #0b1210; color: #dcece4; border: 1px solid #22332b; border-radius: 10px; }
+        QListWidget::item { padding: 4px; }
+        QListWidget::item:selected { background: #16241d; color: #c3f4de; }
+        QLineEdit { background: #0d1512; color: #e7f3ed; border: 1px solid #22332b; border-radius: 9px; padding: 9px; }
+        QProgressBar { background: #10201a; border: 0; border-radius: 3px; }
+        QProgressBar::chunk { background: #6fe3b0; border-radius: 3px; }
     )");
     auto *outer = new QVBoxLayout(this); outer->setContentsMargins(0, 0, 0, 0);
     auto *shell = card("shell"); outer->addWidget(shell); auto *split = new QHBoxLayout(shell); split->setContentsMargins(0,0,0,0); split->setSpacing(0);
-    sidebar = card("sidebar"); sidebar->setFixedWidth(205); auto *side = new QVBoxLayout(sidebar); side->setContentsMargins(16,28,16,24); side->setSpacing(6);
-    auto *brand = new QHBoxLayout; brand->setSpacing(12); auto *mark = new QLabel; mark->setPixmap(eyeIcon(true).pixmap(37,37)); brand->addWidget(mark);
-    brand->addWidget(textLabel("EverEye", "appName")); auto *platformTag = textLabel("LINUX", "linux"); brand->addWidget(platformTag,0,Qt::AlignTop); brand->addStretch(); side->addLayout(brand); side->addSpacing(26);
-    const QStringList names{"Overview", "Sessions", "Lid actions", "Preferences", "Terminal", "AI sessions"};
+    sidebar = card("sidebar"); sidebar->setFixedWidth(205);
+    auto *side = new QVBoxLayout(sidebar); side->setContentsMargins(14,22,14,18); side->setSpacing(5);
+    auto *brand = new QHBoxLayout; brand->setSpacing(10);
+    auto *mark = new QLabel; mark->setPixmap(eyeIcon(true).pixmap(32,32)); brand->addWidget(mark);
+    brand->addWidget(textLabel("EverEye", "appName"));
+    auto *platformTag = textLabel("LINUX", "linux"); brand->addWidget(platformTag, 0, Qt::AlignTop); brand->addStretch(); side->addLayout(brand); side->addSpacing(18);
+    const QStringList names{"Overview", "Sessions", "Lid Actions", "Preferences", "Terminal", "AI Sessions", "About"};
+    const QStringList kinds{"home", "clock", "lid", "gear", "terminal", "spark", "info"};
     for (int i=0; i<names.size(); ++i) {
-        auto *button = new QPushButton(names[i]); button->setObjectName("nav" + QString::number(i)); button->setProperty("nav",true); button->setCheckable(true); button->setCursor(Qt::PointingHandCursor); side->addWidget(button);
+        auto *button = new QPushButton(names[i]); button->setObjectName("nav" + QString::number(i)); button->setProperty("nav",true); button->setCheckable(true); button->setCursor(Qt::PointingHandCursor);
+        button->setIcon(navIcon(kinds.value(i))); button->setIconSize(QSize(17,17));
+        button->setAccessibleName(names[i]); side->addWidget(button);
         connect(button,&QPushButton::clicked,this,[this,i]{ selectPage(i); });
     }
-    side->addStretch(); auto *line = new QFrame; line->setFixedHeight(1); line->setStyleSheet("background: #343c3d;"); side->addWidget(line); side->addSpacing(10);
-    serviceStatus = textLabel("● Connecting to service", "muted", true); side->addWidget(serviceStatus);
-    powerLabel = textLabel("Reading power status…", "small", true); side->addWidget(powerLabel);
-    const auto session = qEnvironmentVariable("XDG_SESSION_TYPE"); side->addWidget(textLabel((session.isEmpty() ? "Desktop" : session.left(1).toUpper()+session.mid(1)) + " · Linux", "muted"));
-    side->addSpacing(12); side->addWidget(textLabel("EVEREYE 0.4.0", "small")); split->addWidget(sidebar);
+    side->addStretch();
+    auto *statusCard = card("navStatus");
+    auto *statusLayout = new QVBoxLayout(statusCard); statusLayout->setContentsMargins(12,11,12,11); statusLayout->setSpacing(5);
+    auto *serviceRow = new QHBoxLayout; serviceRow->setSpacing(7);
+    serviceRow->addWidget(textLabel("●", "endsAt"));
+    serviceStatus = textLabel("Connecting…", "muted", true); serviceRow->addWidget(serviceStatus, 1); statusLayout->addLayout(serviceRow);
+    powerLabel = textLabel("Reading power status…", "small", true); statusLayout->addWidget(powerLabel);
+    const auto session = qEnvironmentVariable("XDG_SESSION_TYPE");
+    statusLayout->addWidget(textLabel((session.isEmpty() ? "Desktop" : session.left(1).toUpper()+session.mid(1)) + " · Linux", "small"));
+    side->addWidget(statusCard); side->addSpacing(8); side->addWidget(textLabel("EVEREYE 0.4.0", "small")); split->addWidget(sidebar);
     auto *main = new QVBoxLayout; main->setContentsMargins(0,0,0,0); main->setSpacing(0); split->addLayout(main,1);
     auto *header = new QHBoxLayout; header->setObjectName("topBar"); header->setContentsMargins(36,26,28,12);
     breadcrumb = textLabel("Workspace / Overview", "muted"); header->addWidget(breadcrumb); header->addStretch();
     pagePicker = new Choice; pagePicker->setObjectName("pagePicker"); pagePicker->addItems(names); pagePicker->setAccessibleName("Navigation"); pagePicker->setFixedWidth(125); pagePicker->setStyleSheet("font-size: 13px;"); header->addWidget(pagePicker); pagePicker->hide();
     connect(pagePicker,&QComboBox::activated,this,&Window::selectPage);
-    badge = textLabel("Connecting", "badge"); header->addWidget(badge);
+    badge = textLabel("Connecting", "badge"); header->addWidget(badge); badge->hide();
+    auto *gear = new QToolButton; gear->setText("⚙"); gear->setAccessibleName("Preferences"); gear->setCursor(Qt::PointingHandCursor);
+    connect(gear, &QToolButton::clicked, this, [this] { selectPage(3); }); header->addWidget(gear);
     auto *more = new QToolButton; more->setText("⋯"); more->setAccessibleName("Window menu"); more->setPopupMode(QToolButton::InstantPopup);
     auto *menu = new QMenu(more); menu->addAction("Hide window",this,&QWidget::hide); menu->addAction("Close window · keep session running",this,&Window::QuitWindow);
     menu->addSeparator(); menu->addAction("End session and quit",this,[this]{ perform("shutdown"); }); more->setMenu(menu); header->addWidget(more); main->addLayout(header);
     scroll = new QScrollArea; scroll->setObjectName("contentScroll"); scroll->setWidgetResizable(true); scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff); scroll->setFocusPolicy(Qt::StrongFocus); scroll->setFrameShape(QFrame::NoFrame); main->addWidget(scroll,1);
-    auto *canvas = new QWidget; canvas->setObjectName("scrollCanvas"); auto *content = new QVBoxLayout(canvas); content->setObjectName("contentLayout"); content->setContentsMargins(36,12,28,8); content->setSpacing(14); content->setSizeConstraint(QLayout::SetMinAndMaxSize);
+    auto *canvas = new QWidget; canvas->setObjectName("scrollCanvas");
+    auto *canvasRow = new QHBoxLayout(canvas); canvasRow->setContentsMargins(0,0,0,0); canvasRow->setSpacing(0);
+    canvasRow->addStretch(1);
+    auto *column = new QWidget; column->setObjectName("scrollColumn"); column->setMaximumWidth(1040);
+    auto *content = new QVBoxLayout(column); content->setObjectName("contentLayout"); content->setContentsMargins(36,12,28,8); content->setSpacing(14);
+    canvasRow->addWidget(column, 8); canvasRow->addStretch(1);
     pages = new PageStack; pages->setObjectName("pages"); content->addWidget(pages);
     const auto page = [&] { auto *p = new PageWidget; p->setObjectName("page"); auto *layout = new QVBoxLayout(p); layout->setContentsMargins(0,0,0,0); layout->setSpacing(18); pages->addWidget(p); return layout; };
-    auto *overview = page(); overview->setSpacing(15);
-    auto *intro = new QHBoxLayout; auto *words = new QVBoxLayout; words->setSpacing(6); words->addWidget(textLabel("CURRENT SESSION","eyebrow"));
-    headline = textLabel("Ready when you are.","headline",true); words->addWidget(headline);
-    subtitle = textLabel("Give your long-running tasks more time.","muted",true); words->addWidget(subtitle); intro->addLayout(words,1);
-    sessionToggle = new Switch(true); sessionToggle->setObjectName("sessionToggle"); sessionToggle->setAccessibleName("Keep the system awake"); intro->addWidget(sessionToggle,0,Qt::AlignBottom); overview->addLayout(intro);
-    auto *hero = new QWidget; cards = new QBoxLayout(QBoxLayout::LeftToRight,hero); cards->setContentsMargins(0,0,0,0); cards->setSpacing(22);
-    auto *face = new TimerFace; face->setObjectName("timerFace"); face->setMinimumHeight(230); auto *timerLayout = new QVBoxLayout(face); timerLayout->setContentsMargins(28,28,28,48); timerLayout->setSpacing(12);
-    auto *timeCaption = textLabel("TIME REMAINING","small"); timerLayout->addWidget(timeCaption);
-    countdown = textLabel("04:00:00","countdown"); countdown->setAccessibleName("Time remaining"); timerLayout->addWidget(countdown);
-    endsAt = textLabel("Choose a session length","endsAt",true); timerLayout->addWidget(endsAt); cards->addWidget(face,6);
-    auto *actions = new QVBoxLayout; actions->setSpacing(12);
-    auto *extendCard = card("dashboardCard"); auto *extendLayout = new QVBoxLayout(extendCard); extendLayout->setContentsMargins(20,15,18,15); extendLayout->setSpacing(8);
-    durationLabel = textLabel("SESSION LENGTH","muted"); extendLayout->addWidget(durationLabel);
-    extension = new Choice; extension->setObjectName("durationPreset"); extension->setAccessibleName("Session duration or extension");
-    for (int n : {15,30,60,120,240}) extension->addItem(n<60 ? QString("%1 minutes").arg(n) : QString("%1 hour%2").arg(n/60).arg(n==60?"":"s"), n*60);
-    extension->addItem("Custom duration…",0); extension->setCurrentIndex(4); extendLayout->addWidget(extension); actions->addWidget(extendCard,1);
-    auto *sleepCard = card("dashboardCard"); auto *sleepLayout = new QVBoxLayout(sleepCard); sleepLayout->setContentsMargins(20,15,18,15); sleepLayout->setSpacing(8);
-    sleepLayout->addWidget(textLabel("SLEEP BEHAVIOR","muted")); auto *sleepRow = new QHBoxLayout; sleepSummary = textLabel("Prevent suspend","sectionTitle"); sleepRow->addWidget(sleepSummary,1); sleepLayout->addLayout(sleepRow); actions->addWidget(sleepCard,1);
-    overviewStart = new QPushButton("Start session"); overviewStart->setObjectName("overviewStart"); actions->addWidget(overviewStart);
-    end = new QPushButton("End session"); end->setObjectName("end"); actions->addWidget(end); cards->addLayout(actions,4); overview->addWidget(hero);
-    auto *protectionTitle = new QHBoxLayout; protectionTitle->addWidget(textLabel("System protection","ruleTitle")); protectionTitle->addStretch(); protectionTitle->addWidget(textLabel("Configured safeguards","small")); overview->addLayout(protectionTitle);
-    auto *protect = new QWidget; protections = new QBoxLayout(QBoxLayout::LeftToRight,protect); protections->setContentsMargins(0,0,0,0); protections->setSpacing(14);
-    const auto protectCard = [&](const QString &title, QLabel *&value, int destination) {
-        auto *panel = card("protectionCard"); auto *layout = new QVBoxLayout(panel); layout->setContentsMargins(17,14,16,14); layout->setSpacing(7);
-        auto *row = new QHBoxLayout; row->addWidget(textLabel(title,"muted"),1); row->addWidget(textLabel("●","endsAt")); layout->addLayout(row);
-        value = textLabel("", "protectionValue",true); layout->addWidget(value); protections->addWidget(panel,1);
-        panel->setAccessibleName(title); panel->setToolTip("Configure in " + names[destination]);
+    auto *overview = page(); overview->setSpacing(14);
+    auto *intro = new QHBoxLayout; intro->addStretch();
+    intro->addWidget(textLabel("Keep awake", "small"), 0, Qt::AlignVCenter);
+    sessionToggle = new Switch(true); sessionToggle->setObjectName("sessionToggle"); sessionToggle->setAccessibleName("Keep the system awake"); intro->addWidget(sessionToggle, 0, Qt::AlignVCenter);
+    overview->addLayout(intro);
+    auto *face = new TimerFace; face->setObjectName("timerFace"); face->setMinimumHeight(300); face->setMaximumHeight(340);
+    auto *timerLayout = new QVBoxLayout(face); timerLayout->setContentsMargins(60,18,60,20); timerLayout->setSpacing(6);
+    timerLayout->addStretch();
+    auto *orb = new QLabel; orb->setPixmap(eyeIcon(true).pixmap(50,50)); orb->setAlignment(Qt::AlignHCenter); timerLayout->addWidget(orb);
+    countdown = textLabel("04:00:00","countdown"); countdown->setAlignment(Qt::AlignHCenter); countdown->setAccessibleName("Time remaining"); timerLayout->addWidget(countdown);
+    auto *remaining = textLabel("Remaining","small"); remaining->setAlignment(Qt::AlignHCenter); timerLayout->addWidget(remaining);
+    endsAt = textLabel("Choose a session length","endsAt",true); endsAt->setAlignment(Qt::AlignHCenter); timerLayout->addWidget(endsAt); endsAt->hide();
+    timerLayout->addStretch();
+    overview->addWidget(face);
+    auto *primaryRow = new QHBoxLayout; primaryRow->addStretch();
+    overviewStart = new QPushButton("Start Session"); overviewStart->setObjectName("overviewStart"); overviewStart->setMinimumWidth(176);
+    end = new QPushButton("End Session"); end->setObjectName("end"); end->setMinimumWidth(176); end->setIcon(QIcon(glyph("stop", QColor("#dcece4"), 14)));
+    primaryRow->addWidget(overviewStart); primaryRow->addWidget(end); primaryRow->addStretch(); overview->addLayout(primaryRow);
+    auto *protect = new QWidget; protections = new QBoxLayout(QBoxLayout::LeftToRight,protect); protections->setContentsMargins(0,0,0,0); protections->setSpacing(12);
+    const auto protectCard = [&](const QString &kind, const QString &title, QLabel *&value) {
+        auto *panel = card("protectionCard");
+        auto *layout = new QHBoxLayout(panel); layout->setContentsMargins(14,12,14,12); layout->setSpacing(12);
+        layout->addWidget(iconBox(kind), 0, Qt::AlignTop);
+        auto *column = new QVBoxLayout; column->setSpacing(4);
+        column->addWidget(textLabel(title,"muted")); value = textLabel("", "protectionValue", true); column->addWidget(value);
+        layout->addLayout(column, 1); protections->addWidget(panel, 1); panel->setAccessibleName(title);
     };
-    protectCard("Battery cutoff",batterySummary,3); protectCard("Lid policy",lidSummary,2); protectCard("Crash recovery",recoverySummary,3); overview->addWidget(protect);
+    protectCard("battery","Battery",batterySummary); protectCard("temp","Temperature",temperatureSummary); protectCard("shield","System Protected",sleepSummary);
+    overview->addWidget(protect);
     overview->addStretch();
 
-    auto *sessions = page(); sessions->addWidget(textLabel("Sessions","sectionTitle")); sessions->addWidget(textLabel("Choose a duration or add time to your current session.","muted",true));
-    auto *sessionCard = card("dashboardCard"); auto *sessionLayout = new QVBoxLayout(sessionCard); sessionLayout->setContentsMargins(24,24,24,24); sessionLayout->setSpacing(18);
+    auto *sessions = page();
+    auto *sessionsScroll=new QScrollArea; sessionsScroll->setObjectName("sessionsScroll"); sessionsScroll->setWidgetResizable(true); sessionsScroll->setFrameShape(QFrame::NoFrame); sessionsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff); sessionsScroll->setFixedHeight(500);
+    auto *sessionsCanvas=new QWidget; auto *sessionsLayout=new QVBoxLayout(sessionsCanvas); sessionsLayout->setContentsMargins(0,0,0,0); sessionsLayout->setSpacing(14);
+    sessionsLayout->addWidget(textLabel("Sessions","sectionTitle")); sessionsLayout->addWidget(textLabel("Choose a duration or add time to your current session.","muted",true));
+    auto *currentCard = card("dashboardCard"); auto *currentLayout = new QVBoxLayout(currentCard); currentLayout->setContentsMargins(20,16,20,16); currentLayout->setSpacing(8);
+    auto *currentHead = new QHBoxLayout; currentHead->addWidget(textLabel("Current session","ruleTitle")); currentHead->addStretch();
+    sessionStatus = textLabel("Idle","statusPill"); currentHead->addWidget(sessionStatus); currentLayout->addLayout(currentHead);
+    sessionStarted = textLabel("No active session","small"); currentLayout->addWidget(sessionStarted);
+    sessionTimer = textLabel("00:00:00","sessionTimer"); currentLayout->addWidget(sessionTimer);
+    sessionProgress = new QProgressBar; sessionProgress->setRange(0,1000); sessionProgress->setValue(0); sessionProgress->setTextVisible(false); sessionProgress->setFixedHeight(6); currentLayout->addWidget(sessionProgress);
+    auto *currentRow = new QHBoxLayout; currentRow->addStretch();
+    currentEnd = new QPushButton("End session"); currentEnd->setObjectName("currentEnd"); currentRow->addWidget(currentEnd); currentLayout->addLayout(currentRow);
+    connect(currentEnd,&QPushButton::clicked,this,[this]{ perform("end"); });
+    sessionsLayout->addWidget(currentCard);
+    auto *sessionCard = card("dashboardCard"); auto *sessionLayout = new QVBoxLayout(sessionCard); sessionLayout->setContentsMargins(20,16,20,16); sessionLayout->setSpacing(12);
+    durationLabel = textLabel("SESSION LENGTH","muted"); sessionLayout->addWidget(durationLabel);
+    auto *presetRow = new QHBoxLayout; presetRow->setSpacing(8);
+    for (int n : {15,30,60,120}) {
+        auto *button = new QPushButton(n<60?QString("%1m").arg(n):QString("%1h").arg(n/60));
+        presetRow->addWidget(button, 1);
+        connect(button,&QPushButton::clicked,this,[this,n]{ days->setValue(0); hours->setValue(n/60); minutes->setValue(n%60); });
+    }
+    auto *customButton = new QPushButton("Custom"); presetRow->addWidget(customButton, 1);
+    connect(customButton,&QPushButton::clicked,this,[this]{ days->setFocus(); });
+    sessionLayout->addLayout(presetRow);
+    start=new QPushButton("Start session"); start->setObjectName("primary"); sessionLayout->addWidget(start);
+    extension = new Choice; extension->setObjectName("durationPreset"); extension->setAccessibleName("Session duration or extension");
+    for (int n : {15,30,60,120,240}) extension->addItem(n<60 ? QString("%1 minutes").arg(n) : QString("%1 hour%2").arg(n/60).arg(n==60?"":"s"), n*60);
+    extension->addItem("Custom duration…",0); extension->setCurrentIndex(4); sessionLayout->addWidget(extension);
     auto *duration = new QHBoxLayout; duration->setSpacing(10);
     const auto field = [&](const QString &name,int maximum,int initial) {
         auto *column = new QVBoxLayout; auto *spin = new NumberField; spin->setObjectName(name.toLower()); spin->setRange(0,maximum); spin->setValue(initial); spin->setAccessibleName(name); column->addWidget(spin); column->addWidget(textLabel(name,"muted")); duration->addLayout(column,1);
         connect(spin,&QSpinBox::valueChanged,this,[this]{ localError.clear(); updateSelection(); }); return spin;
     };
     days=field("Days",30,0); hours=field("Hours",23,4); minutes=field("Minutes",59,0); sessionLayout->addLayout(duration);
-    auto *presets = new QGridLayout; int presetIndex=0; for (int n : {30,60,120,240}) { auto *button = new QPushButton(n<60?"30 min":QString("%1h").arg(n/60)); presets->addWidget(button,presetIndex/2,presetIndex%2); ++presetIndex; connect(button,&QPushButton::clicked,this,[this,n]{ days->setValue(0); hours->setValue(n/60); minutes->setValue(n%60); }); } sessionLayout->addLayout(presets);
     selectionLabel = textLabel("","selectionLabel",true); sessionLayout->addWidget(selectionLabel);
-    start=new QPushButton("Start session"); start->setObjectName("primary"); sessionLayout->addWidget(start);
-    auto *quick = new QHBoxLayout; extend15=new QPushButton("+15 minutes"); extendHour=new QPushButton("+1 hour"); quick->addWidget(extend15); quick->addWidget(extendHour); sessionLayout->addLayout(quick); sessions->addWidget(sessionCard);
-    detail=textLabel("","detail",true); sessions->addWidget(detail); sessions->addStretch();
+    auto *quick = new QHBoxLayout; extend15=new QPushButton("+15 minutes"); extendHour=new QPushButton("+1 hour"); quick->addWidget(extend15); quick->addWidget(extendHour); sessionLayout->addLayout(quick); sessionsLayout->addWidget(sessionCard);
+    detail=textLabel("","detail",true); sessionsLayout->addWidget(detail); sessionsLayout->addStretch();
+    sessionsScroll->setWidget(sessionsCanvas); sessions->addWidget(sessionsScroll);
 
     auto *lidPage=page(); lidPage->addWidget(textLabel("Lid actions","sectionTitle")); lidPage->addWidget(textLabel("Choose how your next session handles a closed laptop lid.","muted",true));
-    auto *lidCard=card("dashboardCard"); auto *lidLayout=new QVBoxLayout(lidCard); lidLayout->setContentsMargins(24,24,24,24); lidLayout->setSpacing(24);
-    lid=new Switch; lid->setObjectName("lidSwitch"); lid->setChecked(true); lidLayout->addWidget(rule("Keep awake with lid closed","Let your tasks continue when you close your laptop.",lid));
+    auto *lidCard=card("dashboardCard"); auto *lidLayout=new QVBoxLayout(lidCard); lidLayout->setContentsMargins(20,16,20,16); lidLayout->setSpacing(16);
+    auto *lidRow = new QHBoxLayout; lidRow->setSpacing(12); lidRow->addWidget(iconBox("lid"));
+    auto *lidWords = new QVBoxLayout; lidWords->setSpacing(3); lidWords->addWidget(textLabel("Keep awake with lid closed","ruleTitle")); lidWords->addWidget(textLabel("Let your tasks continue when you close your laptop.","muted",true));
+    lidRow->addLayout(lidWords,1);
+    lid=new Switch; lid->setObjectName("lidSwitch"); lid->setChecked(true); lidRow->addWidget(lid); lidLayout->addLayout(lidRow);
+    auto *policyRow = new QHBoxLayout; policyRow->addWidget(textLabel("What happens when I close the lid?","muted"),1);
+    lidPolicy = new QComboBox; lidPolicy->setObjectName("lidPolicy"); lidPolicy->addItems({"Keep session running","Use system policy"}); policyRow->addWidget(lidPolicy); lidLayout->addLayout(policyRow);
+    connect(lidPolicy,&QComboBox::currentIndexChanged,this,[this](int index){ if (lid && lid->isChecked() != (index==0)) { const QSignalBlocker block(lid); lid->setChecked(index==0); if(!current.isEmpty()) render(current); } });
+    lidSummary = textLabel("","small",true); lidLayout->addWidget(lidSummary);
+    auto *advanced=new QPushButton("Advanced options"); advanced->setObjectName("advancedOptions"); connect(advanced,&QPushButton::clicked,this,[this]{ selectPage(3); }); lidLayout->addWidget(advanced);
     lidLayout->addWidget(textLabel("Changes apply to the next session. Your screen can still lock. Lid behavior depends on your desktop and hardware.","muted",true)); lidPage->addWidget(lidCard); lidPage->addStretch();
     auto *preferences=page(); preferences->addWidget(textLabel("Preferences","sectionTitle")); preferences->addWidget(textLabel("Configure safeguards before starting a session.","muted",true));
-    auto *settings=card("dashboardCard"); auto *settingsLayout=new QVBoxLayout(settings); settingsLayout->setContentsMargins(24,24,24,24); settingsLayout->setSpacing(20);
-    saver=new Switch; saver->setObjectName("saverSwitch"); saver->setChecked(true); settingsLayout->addWidget(rule("Use power saver","Request power saver on low battery or with the lid closed.",saver));
+    auto *settings=card("dashboardCard"); auto *settingsLayout=new QVBoxLayout(settings); settingsLayout->setContentsMargins(20,16,20,16); settingsLayout->setSpacing(18);
+    auto *saverRow = new QHBoxLayout; saverRow->setSpacing(12); saverRow->addWidget(iconBox("power"));
+    saver=new Switch; saver->setObjectName("saverSwitch"); saver->setChecked(true);
+    saverRow->addWidget(rule("Use power saver","Request power saver on low battery or with the lid closed.",saver),1); settingsLayout->addLayout(saverRow);
     auto *thresholds=new QGridLayout; thresholds->setHorizontalSpacing(16); thresholds->setVerticalSpacing(10);
     cutoff=new NumberField; cutoff->setObjectName("cutoff"); cutoff->setRange(0,99); cutoff->setValue(10); cutoff->setSuffix("%"); cutoff->setAccessibleName("Battery cutoff percentage; zero disables protection");
     lowPower=new NumberField; lowPower->setObjectName("lowPower"); lowPower->setRange(1,100); lowPower->setValue(40); lowPower->setSuffix("%"); lowPower->setAccessibleName("Power saver battery threshold");
     thresholds->addWidget(textLabel("End session below","muted",true),0,0); thresholds->addWidget(textLabel("Power saver below","muted",true),0,1); thresholds->addWidget(cutoff,1,0); thresholds->addWidget(lowPower,1,1); thresholds->setColumnStretch(0,1); thresholds->setColumnStretch(1,1); settingsLayout->addLayout(thresholds);
-    settingsLayout->addWidget(textLabel("Set battery cutoff to 0% to disable it. Crash recovery releases interrupted sessions; it never silently resumes them.","muted",true)); preferences->addWidget(settings);
-    auto *diagnostics=new QPushButton("Open diagnostics"); diagnostics->setObjectName("diagnostics"); preferences->addWidget(diagnostics); preferences->addWidget(textLabel("Closing the window keeps a running session alive. End session and quit is available in the window menu.","muted",true)); preferences->addStretch();
+    settingsLayout->addWidget(textLabel("Set battery cutoff to 0% to disable it. Crash recovery releases interrupted sessions; it never silently resumes them.","muted",true));
+    auto *diagnostics=new QPushButton("Open diagnostics"); diagnostics->setObjectName("diagnostics"); settingsLayout->addWidget(diagnostics);
+    preferences->addWidget(settings);
+    auto *tip=card("protectionCard"); auto *tipLayout=new QHBoxLayout(tip); tipLayout->setContentsMargins(14,12,14,12); tipLayout->setSpacing(12); tipLayout->addWidget(iconBox("info"),0,Qt::AlignTop);
+    auto *tipWords=new QVBoxLayout; tipWords->setSpacing(3); tipWords->addWidget(textLabel("Tip","ruleTitle")); tipWords->addWidget(textLabel("Keep your battery above 10% for uninterrupted work.","muted",true)); recoverySummary = textLabel("Release on interruption","small",true); tipWords->addWidget(recoverySummary);
+    tipLayout->addLayout(tipWords,1); preferences->addWidget(tip);
+    preferences->addWidget(textLabel("Closing the window keeps a running session alive. End session and quit is available in the window menu.","muted",true)); preferences->addStretch();
     auto *terminalPage=page();
     terminalPage->addWidget(textLabel("Terminal","sectionTitle"));
     terminalPage->addWidget(textLabel("Open up to four terminals. They keep running when you close this window.","muted",true));
@@ -339,6 +538,13 @@ Window::Window(Client c, bool demonstration, bool background)
     auto *aiCanvas=new QWidget; auto *aiCanvasLayout=new QVBoxLayout(aiCanvas); aiCanvasLayout->setContentsMargins(0,0,0,0); aiCanvasLayout->setSpacing(12);
     aiCanvasLayout->addWidget(textLabel("AI sessions","sectionTitle"));
     aiCanvasLayout->addWidget(textLabel("AI processes running on this machine. Select one to watch it and type a task; the lid can stay closed.","muted",true));
+    auto *keepCard=card("dashboardCard"); auto *keepLayout=new QHBoxLayout(keepCard); keepLayout->setContentsMargins(14,12,14,12); keepLayout->setSpacing(12);
+    keepLayout->addWidget(iconBox("spark"));
+    auto *keepWords=new QVBoxLayout; keepWords->setSpacing(3); keepWords->addWidget(textLabel("Keep AI sessions alive","ruleTitle")); keepWords->addWidget(textLabel("Prevent AI agents from stopping when you close this laptop lid.","muted",true));
+    keepLayout->addLayout(keepWords,1);
+    agentKeepSwitch=new Switch; agentKeepSwitch->setObjectName("agentKeepSwitch"); agentKeepSwitch->setChecked(QSettings("evereye","window").value("keepAgentsAlive", true).toBool());
+    keepLayout->addWidget(agentKeepSwitch); aiCanvasLayout->addWidget(keepCard);
+    connect(agentKeepSwitch,&QCheckBox::toggled,this,[this](bool on){ QSettings("evereye","window").setValue("keepAgentsAlive", on); });
     jobList=new QListWidget; jobList->setObjectName("jobList"); jobList->setMinimumHeight(90);
     aiCanvasLayout->addWidget(textLabel("Running on your PC","muted")); aiCanvasLayout->addWidget(jobList);
     jobHint=textLabel("Scanning for AI processes…","muted",true);
@@ -383,6 +589,25 @@ Window::Window(Client c, bool demonstration, bool background)
     });
     connect(agentSend,&QPushButton::clicked,this,&Window::sendAgentTask);
     connect(agentTask,&QLineEdit::returnPressed,this,&Window::sendAgentTask);
+
+    auto *aboutPage=page();
+    auto *aboutCard=card("dashboardCard"); auto *aboutLayout=new QVBoxLayout(aboutCard); aboutLayout->setContentsMargins(30,24,30,24); aboutLayout->setSpacing(10);
+    auto *logo=new QLabel; logo->setPixmap(eyeIcon(true).pixmap(72,72)); logo->setAlignment(Qt::AlignHCenter); aboutLayout->addWidget(logo);
+    auto *appName=textLabel("EverEye","headline"); appName->setAlignment(Qt::AlignHCenter); aboutLayout->addWidget(appName);
+    auto *tagline=textLabel("Keep your system awake. Keep working.","muted",true); tagline->setAlignment(Qt::AlignHCenter); aboutLayout->addWidget(tagline);
+    aboutLayout->addSpacing(8);
+    auto *aboutGrid=new QGridLayout; aboutGrid->setHorizontalSpacing(18); aboutGrid->setVerticalSpacing(8);
+    int aboutRow=0;
+    const auto aboutLine=[&](const QString &key, QWidget *value){ aboutGrid->addWidget(textLabel(key,"muted"),aboutRow,0); aboutGrid->addWidget(value,aboutRow,1); ++aboutRow; };
+    aboutLine("Version", textLabel("0.4.0","small"));
+    aboutLine("Author", textLabel("Prof-bilal","small"));
+    aboutLine("License", textLabel("MIT","small"));
+    auto *link=new QLabel("<a href=\"https://github.com/Prof-bilal/evereye-linux\" style=\"color:#8ff0c5;text-decoration:none;\">github.com/Prof-bilal/evereye-linux</a>");
+    link->setTextFormat(Qt::RichText); link->setOpenExternalLinks(true); link->setObjectName("small");
+    aboutLine("GitHub", link);
+    aboutLayout->addLayout(aboutGrid);
+    aboutPage->addWidget(aboutCard); aboutPage->addStretch();
+
     error=textLabel("","error",true); error->setAccessibleName("Session error or warning"); error->hide(); content->addWidget(error);
     reconnect=new QPushButton("Reconnect to service"); reconnect->hide(); content->addWidget(reconnect); content->addStretch(); scroll->setWidget(canvas);
     connect(reconnect,&QPushButton::clicked,this,[this]{ perform("connect"); }); connect(diagnostics,&QPushButton::clicked,this,[this]{ dispatch("doctor"); });
@@ -579,7 +804,6 @@ void Window::resizeEvent(QResizeEvent *event) {
     if(cards) cards->setDirection(width()<690?QBoxLayout::TopToBottom:QBoxLayout::LeftToRight);
     if(protections) protections->setDirection(width()<690?QBoxLayout::TopToBottom:QBoxLayout::LeftToRight);
     if(countdown) countdown->setStyleSheet(width()<450?"font-size: 38px;":"font-size: 53px;");
-    if(headline) headline->setStyleSheet(width()<450?"font-size: 22px;":"font-size: 26px;");
 }
 namespace {
 bool pollAction(const QString &action) {
@@ -628,6 +852,13 @@ void Window::acceptReply(const QString &action, const QJsonObject &reply) {
     } else if (action == "agents.list") {
         agentsCache = reply.value("agents").toArray();
         rebuildAiList();
+        if (!demo && agentKeepSwitch && agentKeepSwitch->isChecked() && !agentsCache.isEmpty()
+            && current.value("connected").toBool(true) && !current.value("active").toBool() && !agentKeepStarted) {
+            agentKeepStarted = true;
+            perform("start", {{"seconds", 8 * 3600}, {"lid", lid->isChecked()}, {"powerSaver", saver->isChecked()},
+                              {"endFloor", cutoff->value()}, {"lowPowerFloor", lowPower->value()}});
+        }
+        if (agentsCache.isEmpty()) agentKeepStarted = false;
         updateButtons();
     } else if (action == "agents.capture") {
         if (reply.value("ok").toBool() && selectedKind == "agent" && agentLog
@@ -738,12 +969,32 @@ void Window::rebuildAiList() {
     jobSignature = signature;
     const QSignalBlocker block(jobList);
     jobList->clear();
+    jobList->setSpacing(4);
     int restore = -1;
+    const auto makeRow = [&](const QString &kind, const QString &title, const QString &detail,
+                             const QString &status, bool live, const QString &copyText, bool isAgent) {
+        auto *row = new QWidget;
+        row->setObjectName("aiRow");
+        row->setAttribute(Qt::WA_TranslucentBackground);
+        row->setStyleSheet("background: transparent;");
+        auto *layout = new QHBoxLayout(row); layout->setContentsMargins(10,6,10,6); layout->setSpacing(10);
+        layout->addWidget(iconBox(kind));
+        auto *words = new QVBoxLayout; words->setSpacing(2);
+        auto *titleLabel = textLabel(title, "ruleTitle"); titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents); words->addWidget(titleLabel);
+        auto *detailLabel = textLabel(detail, "small"); detailLabel->setAttribute(Qt::WA_TransparentForMouseEvents); detailLabel->setToolTip(detail); words->addWidget(detailLabel);
+        layout->addLayout(words, 1);
+        auto *pill = textLabel(status, live ? "statusPill" : "small"); pill->setAttribute(Qt::WA_TransparentForMouseEvents); layout->addWidget(pill);
+        auto *more = new QToolButton; more->setText("⋯"); more->setAccessibleName("Session actions"); more->setPopupMode(QToolButton::InstantPopup);
+        auto *menu = new QMenu(more);
+        menu->addAction("Copy " + QString(isAgent ? "command" : "session id"), [copyText] { QApplication::clipboard()->setText(copyText); });
+        if (isAgent) menu->addAction("Focus task", [this] { if (agentTask) agentTask->setFocus(); });
+        more->setMenu(menu); layout->addWidget(more);
+        return row;
+    };
     for (const auto &value : agentsCache) {
         const auto agent = value.toObject();
         const auto pid = QString::number(agent.value("pid").toInteger());
-        auto *item = new QListWidgetItem(QString("%1  ·  pid %2  ·  %3")
-            .arg(agent.value("name").toString()).arg(pid).arg(agent.value("cwd").toString()));
+        auto *item = new QListWidgetItem; item->setSizeHint(QSize(0, 54));
         item->setData(Qt::UserRole, "agent");
         item->setData(Qt::UserRole + 1, pid);
         item->setData(Qt::UserRole + 2, agent.value("pane").toString());
@@ -752,16 +1003,21 @@ void Window::rebuildAiList() {
         item->setData(Qt::UserRole + 5, agent.value("cwd").toString());
         item->setToolTip(agent.value("command").toString());
         jobList->addItem(item);
+        jobList->setItemWidget(item, makeRow("spark", agent.value("name").toString() + "  ·  pid " + pid,
+                                            agent.value("cwd").toString(), "Active", true, agent.value("command").toString(), true));
         if (selectedKind == "agent" && pid == selectedAgentPid) restore = jobList->count() - 1;
     }
     for (const auto &value : jobsCache) {
         const auto job = value.toObject();
-        auto *item = new QListWidgetItem(QString("%1  ·  %2  ·  %3")
-            .arg(job.value("name").toString()).arg(job.value("status").toString()).arg(job.value("id").toString()));
+        const auto status = job.value("status").toString();
+        const bool live = status == "Running" || status == "Starting";
+        auto *item = new QListWidgetItem; item->setSizeHint(QSize(0, 54));
         item->setData(Qt::UserRole, "job");
         item->setData(Qt::UserRole + 1, job.value("id").toString());
-        item->setData(Qt::UserRole + 2, job.value("status").toString());
+        item->setData(Qt::UserRole + 2, status);
         jobList->addItem(item);
+        jobList->setItemWidget(item, makeRow("terminal", job.value("name").toString() + "  ·  " + job.value("id").toString(),
+                                            "EverEye session", live ? "Active" : status, live, job.value("id").toString(), false));
         if (selectedKind == "job" && job.value("id").toString() == selectedJob) restore = jobList->count() - 1;
     }
     if (restore >= 0) jobList->setCurrentRow(restore);
@@ -808,24 +1064,33 @@ void Window::updateButtons() {
         newTerminal->setEnabled(terminalViews.size() < 4 && !working);
         terminalCount->setText(QString("%1 of 4 terminals").arg(terminalViews.size()));
     }
+    if (currentEnd) currentEnd->setEnabled(connected && active && !working);
 }
 void Window::render(const QJsonObject &result) {
     const bool wasActive = current.value("active").toBool(); current = result;
     const bool active = result.value("active").toBool(); const bool connected = result.value("connected").toBool(true);
     badge->setText(!connected ? "●  Offline" : active ? "●  Protection active" : "●  Ready");
     badge->setToolTip(demo ? "Preview only. No system power settings are changed." : "Session protection status");
-    headline->setText(!connected ? "Service unavailable" : active ? "Session active" : "Keep your system awake");
-    subtitle->setText(!connected ? "Reconnect to check your current session." : active ? "Automatic sleep is blocked until this session ends." : "Set a duration to prevent automatic sleep.");
-    serviceStatus->setText(demo ? "● Offline preview" : connected ? "● Session service running" : "● Service unavailable");
+    serviceStatus->setText(demo ? "Offline preview" : connected ? "Service running" : "Service unavailable");
     auto *face = findChild<QFrame *>("timerFace");
     const auto remaining=result.value("remainingSeconds").toInteger();
     const auto total=qMax(remaining,face->property("total").toLongLong());
     face->setProperty("total",active?total:0); face->setProperty("active",active);
     face->setProperty("progress",total>0?double(remaining)/total:0.0); face->update();
-    endsAt->setText(active ? "●  Automatically ends at " + QDateTime::currentDateTime().addSecs(remaining).toString("h:mm AP") : "●  Choose a session length");
+    endsAt->setText(active ? "Auto-ends at " + QDateTime::currentDateTime().addSecs(remaining).toString("h:mm AP") : "Choose a session length");
     const bool previousOffline = badge->property("offline").toBool(); badge->setProperty("offline", !connected);
     if (previousOffline != !connected) { badge->style()->unpolish(badge); badge->style()->polish(badge); }
     countdown->setText(connected ? formatDuration(active ? result.value("remainingSeconds").toInteger() : selectedSeconds()) : "--:--:--");
+    if (sessionStatus) sessionStatus->setText(active ? "Active" : "Idle");
+    if (sessionTimer) sessionTimer->setText(connected ? (active ? formatDuration(remaining) : "00:00:00") : "--:--:--");
+    if (sessionProgress) sessionProgress->setValue(active && total > 0 ? int((double(remaining) / double(total)) * 1000.0) : 0);
+    if (sessionStarted) {
+        const auto startedOffset = qMax<qint64>(0, total - remaining);
+        sessionStarted->setText(active ? "Started Today, " + QDateTime::currentDateTime().addSecs(-startedOffset).toString("HH:mm") : "No active session");
+    }
+    if (temperatureSummary) temperatureSummary->setText(temperatureText());
+    if (lidPolicy) { const QSignalBlocker block(lidPolicy); lidPolicy->setCurrentIndex(lid->isChecked() ? 0 : 1); }
+    if (currentEnd) currentEnd->setEnabled(connected && active && !operationInFlight && !pendingIsOperation);
     QString reason = result.value("reason").toString();
     if (reason == "Ready" || reason == "Ended by user" || reason.isEmpty()) reason = "Choose a duration to get started.";
     if (active && reason == "Session running") reason = "Your computer is staying awake.";
@@ -851,10 +1116,11 @@ void Window::render(const QJsonObject &result) {
     QString power = result.value("batteryKnown").toBool() ? (result.value("batteryPresent").toBool() ? (percent >= 0 ? QString("Battery %1%").arg(percent, 0, 'f', 0) : "Battery unreadable") : "No battery") : "Power status unavailable";
     if (result.value("acKnown").toBool()) power += result.value("onBattery").toBool() ? "  ·  On battery" : "  ·  Plugged in";
     if (result.value("powerSaverHeld").toBool()) power += "  ·  Power saver";
-    batterySummary->setText(cutoff->value()>0?QString("Ends below %1%").arg(cutoff->value()):"Cutoff disabled");
+    const double batteryPercent = result.value("batteryPercent").toDouble(-1);
+    batterySummary->setText(batteryPercent >= 0 ? QString("%1%").arg(batteryPercent, 0, 'f', 0) : "Unavailable");
     lidSummary->setText(lid->isChecked()?"Keep tasks alive":"Follow system policy");
     recoverySummary->setText(result.value("recoveryBlocked").toBool()?"Needs attention":"Release on interruption");
-    sleepSummary->setText(active?"Prevent suspend":"Ready to protect");
+    sleepSummary->setText(active?"Protected":"Ready");
     powerLabel->setText(power); reconnect->setVisible(!connected); updateButtons(); updateSelection();
     if (tray) { tray->setIcon(eyeIcon(active)); tray->setToolTip(active ? "EverEye · " + countdown->text() + " remaining" : "EverEye · Ready"); }
     renderQuickPanel();

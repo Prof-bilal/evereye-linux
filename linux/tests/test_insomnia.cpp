@@ -503,7 +503,10 @@ private slots:
         Window window([](const QString &, const QJsonObject &) { return QJsonObject{{"connected", true}, {"ok", true}}; }, true);
         window.resize(380, 340); window.show(); navigate(window,1); QTest::qWait(30);
         auto *spin = window.findChild<QSpinBox *>("hours");
-        auto *scroll = window.findChild<QScrollArea *>();
+        QScrollArea *scroll = nullptr;
+        for (auto *parent = spin->parentWidget(); parent && !scroll; parent = parent->parentWidget())
+            scroll = qobject_cast<QScrollArea *>(parent);
+        QVERIFY(scroll);
         scroll->ensureWidgetVisible(spin); const auto before = scroll->verticalScrollBar()->value();
         const auto value = spin->value(); spin->setFocus();
         QWheelEvent wheel(spin->rect().center(), spin->mapToGlobal(spin->rect().center()), QPoint(), QPoint(0, -120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
@@ -605,7 +608,7 @@ private slots:
         window.show(); QTest::qWait(30);
         auto *scroll=window.findChild<QScrollArea *>();
         QCOMPARE(scroll->verticalScrollBar()->maximum(),0);
-        for(int index=0;index<6;++index) { navigate(window,index); window.grab().save(QString("evereye-page-%1.png").arg(index)); }
+        for(int index=0;index<7;++index) { navigate(window,index); window.grab().save(QString("evereye-page-%1.png").arg(index)); }
     }
 private:
     static void navigate(Window &window,int index) {
