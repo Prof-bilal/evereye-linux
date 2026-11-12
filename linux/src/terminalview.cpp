@@ -77,6 +77,7 @@ TerminalView::TerminalView(QWidget *parent) : QWidget(parent) {
     view = new QWebEngineView(this);
     view->setMinimumHeight(360);
     view->setContextMenuPolicy(Qt::NoContextMenu);
+    view->page()->setBackgroundColor(QColor("#0e1416"));
     bridge = new TerminalBridge(this);
     channel = new QWebChannel(this);
     channel->registerObject(QStringLiteral("bridge"), bridge);

@@ -202,8 +202,8 @@ Window::Window(Client c, bool demonstration, bool background)
         QPushButton:hover { background: rgba(255,255,255,28); border-color: #71887d; }
         QPushButton:focus { border: 2px solid #83c7b1; padding: 10px 13px; }
         QPushButton:disabled { color: #929e99; background: rgba(255,255,255,5); border-color: #39433f; }
-        QPushButton#primary, QPushButton#overviewStart { background: #83c7b1; color: #10251e; border: 1px solid #83c7b1; padding: 12px 14px; border-radius: 6px; }
-        QPushButton#primary:hover, QPushButton#overviewStart:hover { background: #a0d8c5; }
+        QPushButton#primary, QPushButton#overviewStart, QPushButton#newTerminal { background: #83c7b1; color: #10251e; border: 1px solid #83c7b1; padding: 12px 14px; border-radius: 6px; }
+        QPushButton#primary:hover, QPushButton#overviewStart:hover, QPushButton#newTerminal:hover { background: #a0d8c5; }
         QPushButton#end { background: #382828; color: #e3b6af; border: 1px solid #74504b; padding: 12px 14px; border-radius: 6px; }
         QPushButton#end:hover { background: #4b302d; }
         QPushButton#primary:disabled, QPushButton#end:disabled, QPushButton#overviewStart:disabled { background: #2c3432; color: #98a39f; border-color: #39423f; }
