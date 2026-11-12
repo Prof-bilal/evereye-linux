@@ -75,7 +75,7 @@ TerminalView::TerminalView(QWidget *parent) : QWidget(parent) {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     view = new QWebEngineView(this);
-    view->setMinimumHeight(360);
+    view->setMinimumHeight(280);
     view->setContextMenuPolicy(Qt::NoContextMenu);
     view->page()->setBackgroundColor(QColor("#0e1416"));
     bridge = new TerminalBridge(this);

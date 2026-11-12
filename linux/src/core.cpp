@@ -1,4 +1,5 @@
 #include "core.h"
+#include "agents.h"
 #include "jobs.h"
 #include <QDateTime>
 #include <QDir>
@@ -172,6 +173,9 @@ QJsonObject Controller::request(const QString &action, const QJsonObject &args) 
     if (action == "start") return start(args);
     if (action == "extend") return extend(args);
     if (action == "end") return end("Ended by user");
+    if (action == "agents.list") return scanAgents();
+    if (action == "agents.capture") return captureAgent(args);
+    if (action == "agents.send") return sendAgent(args);
     if (!jobs) return fail("Unknown action: " + action);
     if (action == "jobs.list") { auto o = jobs->list(); o.insert("connected", true); return o; }
     if (action == "jobs.get") return jobs->get(args.value("id").toString());

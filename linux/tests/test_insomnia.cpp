@@ -1,3 +1,4 @@
+#include "agents.h"
 #include "core.h"
 #include "guardian.h"
 #include "jobs.h"
@@ -188,6 +189,19 @@ private slots:
         client.disconnectFromServer();
         QTRY_COMPARE(manager.get(id).value("status").toString(), QString("Running"));
         manager.stop(id);
+    }
+    void agentScanFindsRunningAgents() {
+        QProcess child;
+        child.start("/bin/bash", {"-c", "exec -a claude sleep 30"});
+        QVERIFY(child.waitForStarted());
+        bool found = false;
+        for (int attempt = 0; attempt < 40 && !found; ++attempt) {
+            QTest::qWait(100);
+            for (const auto &value : scanAgents().value("agents").toArray())
+                if (value.toObject().value("pid").toInteger() == child.processId()) { found = true; break; }
+        }
+        child.kill(); child.waitForFinished();
+        QVERIFY2(found, "scanAgents did not find a process running as claude");
     }
     void jobsShellAcceptsTypedCommands() {
         QTemporaryDir temp;
@@ -591,7 +605,7 @@ private slots:
         window.show(); QTest::qWait(30);
         auto *scroll=window.findChild<QScrollArea *>();
         QCOMPARE(scroll->verticalScrollBar()->maximum(),0);
-        for(int index=0;index<5;++index) { navigate(window,index); window.grab().save(QString("evereye-page-%1.png").arg(index)); }
+        for(int index=0;index<6;++index) { navigate(window,index); window.grab().save(QString("evereye-page-%1.png").arg(index)); }
     }
 private:
     static void navigate(Window &window,int index) {

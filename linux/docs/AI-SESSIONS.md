@@ -11,7 +11,9 @@ start sessions from a phone.
 | `evereye run` | Starts a job in a PTY owned by the controller; output is captured live. |
 | `evereye jobs send` | Writes keystrokes/commands to a running job's PTY. |
 | `evereye attach` | Bridges a terminal's stdin/stdout to a running job's PTY (CLI). |
-| New terminal | Starts an interactive `$SHELL` job and shows it in the in-app terminal. |
+| `evereye agents` | Lists AI agent processes running on this PC. |
+| Terminal page | Up to four in-app terminals; New terminal starts a shell job. |
+| AI sessions page | Lists running AI processes and EverEye jobs; watch and task them. |
 | Controller (`evereye --daemon`) | Owns job state, logs, and the existing awake session. |
 | `evereye gateway` | Opt-in HTTP + SSE bridge to the controller over the user's session D-Bus. |
 | `mobile/` PWA | Installable phone client served by the gateway or hosted separately. |
@@ -111,8 +113,8 @@ The Terminal page embeds a `QWebEngineView` running xterm.js and a
 `term.write` (base64 so split UTF-8 survives), sends `term.onData` back as
 input, and forwards `term.onResize` as `TIOCSWINSZ` + `SIGWINCH`.
 
-- The page has a single **New terminal** button; the terminal fills the area
-  below it and accepts typing immediately.
+- The page has one **New terminal** button and shows up to four terminals as
+  tabs; each tab keeps its own scrollback and keyboard focus.
 - Closing the window just detaches; the shell or agent keeps running and
   remains visible to the gateway and CLI.
 - Several viewers can attach to one job. The last resize wins, like tmux.
@@ -121,6 +123,30 @@ input, and forwards `term.onResize` as `TIOCSWINSZ` + `SIGWINCH`.
 - The embedded terminal needs Qt WebEngine. CMake builds it when
   `Qt6WebEngineWidgets` is found and otherwise shows a clear message in the
   page; the qmake build requires the module.
+
+## AI sessions running on the PC
+
+The AI sessions page scans `/proc` for AI agent processes owned by this user
+(`claude`, `codex`, `aider`, `opencode`, `gemini`, `goose`, `cline`, `crush`,
+`command-code`, and similar) and lists them next to EverEye jobs. Each row
+shows the matched name, pid and working directory. `~/.config/evereye/agents.json`
+can replace the pattern list:
+
+```json
+{ "patterns": ["claude", "codex", "aider", "command-code"] }
+```
+
+- Selecting a process shows its command and cwd and focuses a task box.
+  **Send task** writes the line to the process's terminal (a `tmux send-keys`
+  when it runs in a tmux pane, otherwise the owning `/dev/pts/N`). That is
+  best-effort: an agent that is not reading its terminal will not see it.
+- Live output is captured for agents inside **tmux** (`tmux capture-pane`,
+  refreshed every second). Output from an arbitrary terminal process cannot be
+  read: the PTY master belongs to its terminal emulator. For a full live
+  terminal, start the agent with `evereye run` or from the Terminal page.
+- Background helper daemons such as `codex app-serve` are filtered out.
+- `evereye agents` prints the same list as JSON. It is local-only and reads
+  `/proc` as your user.
 
 ## HTTP API
 

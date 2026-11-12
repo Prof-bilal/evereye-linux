@@ -73,6 +73,7 @@ evereye jobs log <id> -f       # follow output
 evereye jobs send <id> "ls"    # type into a running job
 evereye attach <id>            # local terminal bridge (the app embeds xterm.js)
 evereye jobs stop <id>
+evereye agents                 # AI processes running on this PC
 evereye gateway                # opt-in HTTP + SSE bridge for the PWA
 ```
 

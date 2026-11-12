@@ -1,5 +1,7 @@
 #pragma once
 #include <QWidget>
+#include <QList>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QIcon>
 #include <functional>
@@ -7,7 +9,7 @@
 class QLabel; class QPushButton; class QSpinBox; class QCheckBox; class QSystemTrayIcon;
 class QScrollArea; class QBoxLayout; class QResizeEvent;
 class QStackedWidget; class QComboBox;
-class QDialog; class QToolButton; class QPlainTextEdit; class QListWidget; class QLineEdit;
+class QDialog; class QToolButton; class QPlainTextEdit; class QListWidget; class QLineEdit; class QTabBar;
 namespace insomnia {
 class TerminalView;
 QIcon eyeIcon(bool active = false);
@@ -34,7 +36,12 @@ private:
     void updateButtons();
     void updateSelection();
     void showDiagnostics(const QJsonObject &);
-    void attachTerminal(const QString &id);
+    void addTerminal(const QString &jobId);
+    void removeTerminal(int index);
+    void attachAiJob(const QString &jobId, const QString &status);
+    void updateJobList(const QJsonObject &reply);
+    void rebuildAiList();
+    void sendAgentTask();
     void selectPage(int);
     void toggleQuickPanel();
     void createQuickPanel();
@@ -77,7 +84,25 @@ private:
     QLabel *quickLid = nullptr; QLabel *quickRecovery = nullptr;
     QSpinBox *quickDays = nullptr; QSpinBox *quickHours = nullptr; QSpinBox *quickMinutes = nullptr;
     QPushButton *quickCustom = nullptr;
-    QWidget *terminalHost = nullptr;
-    TerminalView *terminalView = nullptr;
+    QPushButton *newTerminal = nullptr;
+    QTabBar *terminalTabs = nullptr;
+    QStackedWidget *terminalStack = nullptr;
+    QList<TerminalView *> terminalViews;
+    QList<QString> terminalJobs;
+    QLabel *terminalCount = nullptr;
+    QListWidget *jobList = nullptr;
+    QLabel *jobHint = nullptr;
+    QWidget *jobTerminalHost = nullptr;
+    TerminalView *jobTerminal = nullptr;
+    QStackedWidget *aiDetail = nullptr;
+    QWidget *agentPane = nullptr;
+    QPlainTextEdit *agentLog = nullptr;
+    QLineEdit *agentTask = nullptr;
+    QPushButton *agentSend = nullptr;
+    QJsonArray agentsCache, jobsCache;
+    QString jobSignature;
+    QString selectedJob;
+    QString selectedKind;
+    QString selectedAgentPid, selectedAgentPane, selectedAgentTty;
 };
 }
