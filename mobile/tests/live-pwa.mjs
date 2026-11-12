@@ -40,13 +40,6 @@ try {
   await page.getByTestId("log").getByText(/live-pwa-marker/).waitFor({ timeout: 15000 });
 
   console.log("ok - real PWA streamed job output through the real gateway");
-
-  // Open the xterm.js terminal page against the real gateway WebSocket.
-  const href = await page.getByRole("link", { name: "Terminal" }).getAttribute("href");
-  if (!href) fail("terminal link missing");
-  await page.goto(new URL(href, base).toString(), { waitUntil: "networkidle" });
-  await page.getByText("connected", { exact: true }).waitFor({ timeout: 15000 });
-  console.log("ok - real PWA xterm terminal connected through the real gateway");
   if (errors.length) fail("page errors: " + errors.join("; "));
 } finally {
   await browser.close();

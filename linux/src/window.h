@@ -1,6 +1,5 @@
 #pragma once
 #include <QWidget>
-#include <QHash>
 #include <QJsonObject>
 #include <QIcon>
 #include <functional>
@@ -10,6 +9,7 @@ class QScrollArea; class QBoxLayout; class QResizeEvent;
 class QStackedWidget; class QComboBox;
 class QDialog; class QToolButton; class QPlainTextEdit; class QListWidget; class QLineEdit;
 namespace insomnia {
+class TerminalView;
 QIcon eyeIcon(bool active = false);
 class Window final : public QWidget {
     Q_OBJECT
@@ -34,8 +34,7 @@ private:
     void updateButtons();
     void updateSelection();
     void showDiagnostics(const QJsonObject &);
-    QString cleanTerminal(const QString &);
-    void launchTerminal(const QString &id);
+    void attachTerminal(const QString &id);
     void selectPage(int);
     void toggleQuickPanel();
     void createQuickPanel();
@@ -78,23 +77,7 @@ private:
     QLabel *quickLid = nullptr; QLabel *quickRecovery = nullptr;
     QSpinBox *quickDays = nullptr; QSpinBox *quickHours = nullptr; QSpinBox *quickMinutes = nullptr;
     QPushButton *quickCustom = nullptr;
-    QListWidget *jobList = nullptr;
-    QPlainTextEdit *jobLog = nullptr;
-    QComboBox *jobPreset = nullptr;
-    QLineEdit *jobCommand = nullptr;
-    QPushButton *jobStart = nullptr;
-    QPushButton *jobStop = nullptr;
-    QPushButton *jobRefresh = nullptr;
-    QPushButton *jobNewTerminal = nullptr;
-    QPushButton *jobOpenTerminal = nullptr;
-    QPushButton *jobSend = nullptr;
-    QPushButton *jobCtrlC = nullptr;
-    QLineEdit *jobInput = nullptr;
-    QString selectedJob;
-    QString jobSignature;
-    QString terminalPending;
-    QHash<QString, QString> jobCwd, jobName, jobStatus;
-    bool openAfterStart = false;
-    qint64 jobLogOffset = 0;
+    QWidget *terminalHost = nullptr;
+    TerminalView *terminalView = nullptr;
 };
 }

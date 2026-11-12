@@ -235,6 +235,7 @@ static int cli(const QStringList &args) {
     const auto result = callController(action, params, action != "shutdown"); output(result); return result.value("ok").toBool() ? 0 : 1;
 }
 int main(int argc, char **argv) {
+    QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
     QStringList args; for (int i = 1; i < argc; ++i) args << QString::fromLocal8Bit(argv[i]);
     const bool preview = args.contains("--demo") || args.contains("--screenshot");
     const bool replace = args == QStringList{"--replace-ui"};

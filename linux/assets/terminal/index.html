@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="xterm.css">
+<style>
+  html, body, #terminal { height: 100%; margin: 0; background: #0e1416; }
+  #terminal { box-sizing: border-box; padding: 8px; }
+</style>
+</head>
+<body>
+<div id="terminal"></div>
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script src="xterm.js"></script>
+<script src="addon-fit.js"></script>
+<script>
+  const term = new Terminal({
+    fontFamily: "'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, monospace",
+    fontSize: 13,
+    cursorBlink: true,
+    scrollback: 5000,
+    theme: {
+      background: "#0e1416", foreground: "#dcebe5", cursor: "#83c7b1",
+      selectionBackground: "#2b4a40",
+      black: "#182022", red: "#ff6b5e", green: "#83c7b1", yellow: "#e0a53a",
+      blue: "#5aa9ff", magenta: "#d98cff", cyan: "#4cc9b0", white: "#dcebe5",
+      brightBlack: "#6f7f79", brightRed: "#ff8a5c", brightGreen: "#a0d8c5",
+      brightYellow: "#f0c05a", brightBlue: "#7fbcff", brightMagenta: "#e6aaff",
+      brightCyan: "#6fdcc7", brightWhite: "#f4fff9"
+    }
+  });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(document.getElementById("terminal"));
+
+  let bridge = null;
+  const sendSize = () => { if (bridge) bridge.resize(term.cols, term.rows); };
+  term.onData(data => { if (bridge) bridge.sendInput(data); });
+  term.onResize(sendSize);
+
+  new QWebChannel(qt.webChannelTransport, channel => {
+    bridge = channel.objects.bridge;
+    bridge.output.connect(base64 => {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      term.write(bytes);
+    });
+    bridge.reset.connect(() => { term.reset(); if (bridge) bridge.resize(term.cols, term.rows); });
+    bridge.setReady();
+    fit.fit();
+    sendSize();
+    term.focus();
+  });
+
+  const surface = document.getElementById("terminal");
+  new ResizeObserver(() => { fit.fit(); sendSize(); }).observe(surface);
+  window.addEventListener("resize", () => { fit.fit(); sendSize(); });
+</script>
+</body>
+</html>

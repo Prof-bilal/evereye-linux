@@ -1,10 +1,12 @@
-QT += core gui widgets dbus concurrent network
+QT += core gui widgets dbus concurrent network webenginewidgets webchannel
 CONFIG += c++20 release warn_on
+DEFINES += EVEREYE_WEBENGINE
 CONFIG -= app_bundle
 TEMPLATE = app
 TARGET = evereye
-SOURCES += src/main.cpp src/core.cpp src/platform.cpp src/guardian.cpp src/service.cpp src/window.cpp src/jobs.cpp src/gateway.cpp src/websocket.cpp
-HEADERS += src/core.h src/platform.h src/guardian.h src/service.h src/window.h src/jobs.h src/gateway.h src/websocket.h
+SOURCES += src/main.cpp src/core.cpp src/platform.cpp src/guardian.cpp src/service.cpp src/window.cpp src/jobs.cpp src/gateway.cpp src/terminalview.cpp
+HEADERS += src/core.h src/platform.h src/guardian.h src/service.h src/window.h src/jobs.h src/gateway.h src/terminalview.h
+RESOURCES += assets/evereye.qrc
 QMAKE_CXXFLAGS += -Wall -Wextra -Wpedantic
 isEmpty(PREFIX): PREFIX = /usr
 target.path = $$PREFIX/bin

@@ -1,7 +1,5 @@
 #include "gateway.h"
-#include "jobs.h"
 #include "service.h"
-#include "websocket.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -10,12 +8,10 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QLocalSocket>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProcess>
-#include <QtEndian>
 #include <QRandomGenerator>
 #include <QSaveFile>
 #include <QSet>
@@ -131,99 +127,6 @@ QJsonObject controller(const QString &action, const QJsonObject &args = {}) {
     return callController(action, args, true);
 }
 
-// One browser xterm.js view bridged to a running job's attach socket.
-class WsTerminal final : public QObject {
-public:
-    WsTerminal(QTcpSocket *s, const QString &id, const QByteArray &initial, QObject *parent = nullptr)
-        : QObject(parent), socket(s), jobId(id) {
-        socket->setParent(this);
-        QObject::connect(socket, &QTcpSocket::readyRead, this, &WsTerminal::onClientData);
-        QObject::connect(socket, &QTcpSocket::disconnected, this, [this] {
-            local.abort();
-            deleteLater();
-        });
-        QObject::connect(&local, &QLocalSocket::readyRead, this, &WsTerminal::onLocalData);
-        QObject::connect(&local, &QLocalSocket::disconnected, this, [this] {
-            sendClose(1000);
-            socket->disconnectFromHost();
-        });
-        parser.append(initial);
-        local.connectToServer(jobSocketPath(jobId));
-        if (!local.waitForConnected(2000)) {
-            sendClose(1011);
-            socket->flush();
-            socket->disconnectFromHost();
-            return;
-        }
-        processClientFrames();
-    }
-private:
-    QTcpSocket *socket;
-    QLocalSocket local;
-    QString jobId;
-    WebSocketParser parser;
-
-    void sendFrame(int opcode, const QByteArray &payload) { socket->write(webSocketFrame(opcode, payload)); }
-    void sendClose(int code) {
-        QByteArray payload(2, '\0');
-        payload[0] = char((code >> 8) & 0xff);
-        payload[1] = char(code & 0xff);
-        sendFrame(0x8, payload);
-    }
-    void sendAttach(quint8 type, const QByteArray &payload) {
-        QByteArray frame;
-        frame.append(char(type));
-        char header[4];
-        qToBigEndian<quint32>(quint32(payload.size()), reinterpret_cast<uchar *>(header));
-        frame.append(header, 4);
-        frame.append(payload);
-        local.write(frame);
-        local.flush();
-    }
-    void onLocalData() {
-        const auto data = local.readAll();
-        for (int offset = 0; offset < data.size(); offset += 32768)
-            sendFrame(0x2, data.mid(offset, 32768));
-    }
-    void onClientData() {
-        parser.append(socket->readAll());
-        processClientFrames();
-    }
-    void processClientFrames() {
-        while (true) {
-            QByteArray payload;
-            int opcode = 0;
-            bool fatal = false;
-            if (!parser.next(payload, opcode, fatal)) {
-                if (fatal) sendClose(1002);
-                if (fatal) socket->disconnectFromHost();
-                return;
-            }
-            if (opcode == 0x2) {
-                if (local.state() == QLocalSocket::ConnectedState) sendAttach(1, payload);
-            } else if (opcode == 0x1) {
-                QJsonParseError error;
-                const auto document = QJsonDocument::fromJson(payload, &error);
-                if (error.error == QJsonParseError::NoError && document.isObject()) {
-                    const auto object = document.object();
-                    if (object.value("type").toString() == "resize") {
-                        QByteArray size(4, '\0');
-                        qToBigEndian<quint16>(quint16(object.value("cols").toInt(80)), reinterpret_cast<uchar *>(size.data()));
-                        qToBigEndian<quint16>(quint16(object.value("rows").toInt(24)), reinterpret_cast<uchar *>(size.data()) + 2);
-                        sendAttach(2, size);
-                    }
-                }
-            } else if (opcode == 0x9) {
-                sendFrame(0xA, payload);
-            } else if (opcode == 0x8) {
-                local.abort();
-                socket->disconnectFromHost();
-                return;
-            }
-        }
-    }
-};
-
 class Client final : public QObject {
 public:
     Client(QTcpSocket *s, GatewayState *st, QObject *parent = nullptr) : QObject(parent), socket(s), state(st) {
@@ -262,7 +165,7 @@ private:
         QByteArray target = parts[1];
         const auto qpos = target.indexOf('?');
         if (qpos >= 0) target = target.left(qpos);
-        QByteArray auth, type, upgrade, websocketKey, websocketProtocols;
+        QByteArray auth, type;
         qint64 length = 0;
         bool sawLength = false;
         for (int i = 1; i < lines.size(); ++i) {
@@ -272,9 +175,6 @@ private:
             const auto name = line.left(colon).toLower();
             auto value = line.mid(colon + 1).trimmed();
             if (name == "authorization") auth = value;
-            else if (name == "upgrade") upgrade = value.toLower();
-            else if (name == "sec-websocket-key") websocketKey = value;
-            else if (name == "sec-websocket-protocol") websocketProtocols = value;
             else if (name == "content-length") {
                 if (sawLength) { writeHttp(socket, 400, "text/plain", "duplicate length\n"); complete = true; return; }
                 sawLength = true;
@@ -285,57 +185,11 @@ private:
         }
         if (method == "OPTIONS") { writeHttp(socket, 204, "text/plain", QByteArray()); complete = true; return; }
         if (method != "GET" && method != "POST") { writeHttp(socket, 405, "text/plain", "method not allowed\n"); complete = true; return; }
-        if (upgrade == "websocket") {
-            complete = true;
-            upgradeWebSocket(QString::fromUtf8(target), websocketKey, websocketProtocols, buffer.mid(headerEnd + 4));
-            return;
-        }
         if (method == "POST" && !sawLength) { writeHttp(socket, 400, "text/plain", "content-length required\n"); complete = true; return; }
         if (buffer.size() < headerEnd + 4 + length) return;
         const auto body = buffer.mid(headerEnd + 4, int(length));
         complete = true;
         handle(method, QString::fromUtf8(target), auth, body);
-    }
-
-    void upgradeWebSocket(const QString &path, const QByteArray &key, const QByteArray &protocols, const QByteArray &leftover) {
-        static const QString prefix = "/api/jobs/";
-        static const QString suffix = "/terminal";
-        if (key.isEmpty() || !path.startsWith(prefix) || !path.endsWith(suffix)) {
-            writeHttp(socket, 404, "text/plain", "not found\n");
-            return;
-        }
-        const auto id = path.mid(prefix.size(), path.size() - prefix.size() - suffix.size());
-        if (id.isEmpty() || id.contains('/') || id.contains("..")) {
-            writeHttp(socket, 404, "text/plain", "not found\n");
-            return;
-        }
-        // Browsers cannot set Authorization on WebSocket requests; the token
-        // rides as a subprotocol offered alongside the "evereye" label.
-        bool labelled = false;
-        QByteArray token;
-        for (const auto &item : protocols.split(',')) {
-            const auto value = item.trimmed();
-            if (value == "evereye") labelled = true;
-            else if (!value.isEmpty()) token = value;
-        }
-        if (!labelled || !equalToken(token, state->token)) {
-            writeHttp(socket, 401, "text/plain", "unauthorized\n");
-            return;
-        }
-        const auto job = controller("jobs.get", {{"id", id}});
-        if (!job.value("ok").toBool()) {
-            writeHttp(socket, 404, "text/plain", "not found\n");
-            return;
-        }
-        complete = true;
-        QObject::disconnect(socket, nullptr, this, nullptr);
-        QByteArray response = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n";
-        response += "Sec-WebSocket-Accept: " + webSocketAccept(key) + "\r\n";
-        response += "Sec-WebSocket-Protocol: evereye\r\n\r\n";
-        socket->write(response);
-        socket->flush();
-        new WsTerminal(socket, id, leftover, parent());
-        deleteLater();
     }
 
     bool authorized(const QByteArray &auth) const {
@@ -345,7 +199,10 @@ private:
     }
 
     void handle(const QByteArray &method, QString path, const QByteArray &auth, const QByteArray &body) {
-        if (!path.startsWith("/api/")) { serveStatic(path); return; }
+        if (path == "/" || path.startsWith("/assets") || path.startsWith("/icon") || path.endsWith(".js") || path.endsWith(".css") || path.endsWith(".webmanifest") || path.endsWith(".svg")) {
+            serveStatic(path);
+            return;
+        }
         if (!authorized(auth)) { writeJson(socket, 401, {{"ok", false}, {"error", "Unauthorized"}}); return; }
         if (path == "/api/status" && method == "GET") { writeJson(socket, 200, controller("status")); return; }
         if (path == "/api/jobs" && method == "GET") { writeJson(socket, 200, controller("jobs.list")); return; }
@@ -390,15 +247,10 @@ private:
     void serveStatic(QString path) {
         if (path == "/") path = "/index.html";
         if (path.contains("..")) { writeHttp(socket, 404, "text/plain", "not found\n"); return; }
-        QFileInfo info(state->webRoot + path);
-        // Next's trailing-slash export puts pages at /page/index.html.
-        if (!info.isFile() && !path.endsWith('/') && !QFileInfo(path).suffix().size())
-            info = QFileInfo(state->webRoot + path + "/index.html");
-        if (path.endsWith('/')) info = QFileInfo(state->webRoot + path + "index.html");
+        const QFileInfo info(state->webRoot + path);
         if (!info.isFile() || !info.canonicalFilePath().startsWith(QFileInfo(state->webRoot).canonicalFilePath())) {
             writeHttp(socket, 404, "text/plain", "not found\n"); return;
         }
-        path = info.fileName();
         QFile f(info.filePath());
         if (!f.open(QIODevice::ReadOnly)) { writeHttp(socket, 404, "text/plain", "not found\n"); return; }
         QByteArray type = "text/plain";

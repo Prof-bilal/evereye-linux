@@ -1,0 +1,8 @@
+<RCC>
+  <qresource prefix="/terminal">
+    <file alias="index.html">terminal/index.html</file>
+    <file alias="xterm.js">terminal/xterm.js</file>
+    <file alias="xterm.css">terminal/xterm.css</file>
+    <file alias="addon-fit.js">terminal/addon-fit.js</file>
+  </qresource>
+</RCC>

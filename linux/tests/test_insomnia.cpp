@@ -3,7 +3,6 @@
 #include "jobs.h"
 #include "platform.h"
 #include "service.h"
-#include "websocket.h"
 #include "window.h"
 #include <QApplication>
 #include <QElapsedTimer>
@@ -189,31 +188,6 @@ private slots:
         client.disconnectFromServer();
         QTRY_COMPARE(manager.get(id).value("status").toString(), QString("Running"));
         manager.stop(id);
-    }
-    void websocketHandshakeAndFrames() {
-        QCOMPARE(webSocketAccept("dGhlIHNhbXBsZSBub25jZQ=="), QByteArray("s3pPLMBiTxaQ9kYGzzhZRbK+xOo="));
-        const auto frame = webSocketFrame(0x2, "hello");
-        QCOMPARE(uchar(frame.at(0)), uchar(0x82));
-        QCOMPARE(int(uchar(frame.at(1))), 5);
-        QCOMPARE(frame.mid(2), QByteArray("hello"));
-
-        WebSocketParser parser;
-        // Build a masked client frame by hand: opcode 1, payload "hi".
-        QByteArray client;
-        client.append(char(0x81));
-        client.append(char(0x80 | 2));
-        const char mask[4] = {1, 2, 3, 4};
-        client.append(mask, 4);
-        client.append(char('h' ^ 1));
-        client.append(char('i' ^ 2));
-        parser.append(client);
-        QByteArray payload;
-        int opcode = 0;
-        bool fatal = false;
-        QVERIFY(parser.next(payload, opcode, fatal));
-        QVERIFY(!fatal);
-        QCOMPARE(opcode, 1);
-        QCOMPARE(payload, QByteArray("hi"));
     }
     void jobsShellAcceptsTypedCommands() {
         QTemporaryDir temp;

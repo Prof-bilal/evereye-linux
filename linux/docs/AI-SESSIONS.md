@@ -10,9 +10,8 @@ start sessions from a phone.
 |---|---|
 | `evereye run` | Starts a job in a PTY owned by the controller; output is captured live. |
 | `evereye jobs send` | Writes keystrokes/commands to a running job's PTY. |
-| `evereye attach` | Bridges this terminal's stdin/stdout to a running job's PTY. |
-| New terminal | Starts an interactive `$SHELL` job and opens the web terminal. |
-| Open terminal | Opens the xterm.js web terminal attached to the selected session. |
+| `evereye attach` | Bridges a terminal's stdin/stdout to a running job's PTY (CLI). |
+| New terminal | Starts an interactive `$SHELL` job and shows it in the in-app terminal. |
 | Controller (`evereye --daemon`) | Owns job state, logs, and the existing awake session. |
 | `evereye gateway` | Opt-in HTTP + SSE bridge to the controller over the user's session D-Bus. |
 | `mobile/` PWA | Installable phone client served by the gateway or hosted separately. |
@@ -36,9 +35,8 @@ cd linux
 ./evereye attach <id>          # real terminal window attached to the job
 ./evereye jobs stop <id>
 
-# Open terminal / New terminal in the app opens the gateway's xterm.js page,
-# which streams the PTY over a WebSocket. The embedded pane stays available
-# for a quick look, and `evereye attach` remains for a local terminal.
+# The AI sessions page has one button, New terminal. It starts a shell job and
+# shows a real xterm.js terminal inside the app, bridged to that job's PTY.
 
 # Start an awake session so the laptop survives a closed lid
 ./evereye start 4h --lid
@@ -104,26 +102,25 @@ If the gateway finds `.../share/evereye/web/index.html` (user or system install)
 PWA at `/`, so the common case is same-origin. Install it from the browser's "Add to Home
 Screen". Open Settings and paste the gateway URL and token.
 
-## Real terminal (xterm.js)
+## Real terminal in the app
 
 Each running job serves a local Unix socket at
 `$XDG_RUNTIME_DIR/evereye/jobs/<id>.sock` (mode 0600 in a 0700 directory).
-The gateway bridges that socket to a browser WebSocket at
-`GET /api/jobs/<id>/terminal`; the PWA page `/terminal/?id=<id>` renders it
-with xterm.js (FitAddon), sends `term.onData` back as binary frames, and
-forwards `fit()` sizes as `{ "type": "resize", "cols", "rows" }` text frames.
+The AI sessions page embeds a `QWebEngineView` running xterm.js and a
+`QWebChannel` bridge. The bridge opens that socket, feeds raw PTY output to
+`term.write` (base64 so split UTF-8 survives), sends `term.onData` back as
+input, and forwards `term.onResize` as `TIOCSWINSZ` + `SIGWINCH`.
 
-- **Open terminal** / **New terminal** in the desktop app open that page in the
-  browser (it defaults to `http://127.0.0.1:<gateway port>/terminal/?id=<id>`).
-- The WebSocket token rides as a subprotocol: `new WebSocket(url, ["evereye", token])`;
-  browsers cannot set `Authorization` on a WebSocket. A wrong token gets 401.
-- Output is binary WebSocket frames fed to `term.write`, so full-screen agents
-  render correctly and resizes go through `TIOCSWINSZ` + `SIGWINCH`.
-- Closing the page just detaches; the job keeps running and stays visible in
-  EverEye and the gateway.
-- `evereye attach <id>` is still available for a local terminal emulator; the
-  socket checks `SO_PEERCRED`, so only the same Unix user can attach.
+- The page has a single **New terminal** button; the terminal fills the area
+  below it and accepts typing immediately.
+- Closing the window just detaches; the shell or agent keeps running and
+  remains visible to the gateway and CLI.
 - Several viewers can attach to one job. The last resize wins, like tmux.
+- The socket checks `SO_PEERCRED`; only the same Unix user can attach.
+- `evereye attach <id>` is still available for an external terminal.
+- The embedded terminal needs Qt WebEngine. CMake builds it when
+  `Qt6WebEngineWidgets` is found and otherwise shows a clear message in the
+  page; the qmake build requires the module.
 
 ## HTTP API
 
@@ -135,7 +132,6 @@ All `/api/*` routes require `Authorization: Bearer <token>`.
 | GET | `/api/jobs` | Every job with status and exit code |
 | GET | `/api/jobs/<id>` | One job |
 | GET | `/api/jobs/<id>/stream` | Live output as Server-Sent Events |
-| WS | `/api/jobs/<id>/terminal` | Bidirectional PTY for the xterm.js page |
 | POST | `/api/jobs` | Start `{ "preset": "claude" }` or (if allowed) `{ "command": ..., "args": [...] }` |
 | POST | `/api/jobs/<id>/stop` | Terminate the job's process group |
 | POST | `/api/jobs/<id>/input` | `{ "data": "text\\n" }` written to the job's PTY |
