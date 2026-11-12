@@ -106,7 +106,7 @@ Screen". Open Settings and paste the gateway URL and token.
 
 Each running job serves a local Unix socket at
 `$XDG_RUNTIME_DIR/evereye/jobs/<id>.sock` (mode 0600 in a 0700 directory).
-The AI sessions page embeds a `QWebEngineView` running xterm.js and a
+The Terminal page embeds a `QWebEngineView` running xterm.js and a
 `QWebChannel` bridge. The bridge opens that socket, feeds raw PTY output to
 `term.write` (base64 so split UTF-8 survives), sends `term.onData` back as
 input, and forwards `term.onResize` as `TIOCSWINSZ` + `SIGWINCH`.

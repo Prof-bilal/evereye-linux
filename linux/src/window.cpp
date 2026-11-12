@@ -233,7 +233,7 @@ Window::Window(Client c, bool demonstration, bool background)
     sidebar = card("sidebar"); sidebar->setFixedWidth(205); auto *side = new QVBoxLayout(sidebar); side->setContentsMargins(16,28,16,24); side->setSpacing(6);
     auto *brand = new QHBoxLayout; brand->setSpacing(12); auto *mark = new QLabel; mark->setPixmap(eyeIcon(true).pixmap(37,37)); brand->addWidget(mark);
     brand->addWidget(textLabel("EverEye", "appName")); auto *platformTag = textLabel("LINUX", "linux"); brand->addWidget(platformTag,0,Qt::AlignTop); brand->addStretch(); side->addLayout(brand); side->addSpacing(26);
-    const QStringList names{"Overview", "Sessions", "Lid actions", "Preferences", "AI sessions"};
+    const QStringList names{"Overview", "Sessions", "Lid actions", "Preferences", "Terminal"};
     for (int i=0; i<names.size(); ++i) {
         auto *button = new QPushButton(names[i]); button->setObjectName("nav" + QString::number(i)); button->setProperty("nav",true); button->setCheckable(true); button->setCursor(Qt::PointingHandCursor); side->addWidget(button);
         connect(button,&QPushButton::clicked,this,[this,i]{ selectPage(i); });
@@ -315,7 +315,7 @@ Window::Window(Client c, bool demonstration, bool background)
     settingsLayout->addWidget(textLabel("Set battery cutoff to 0% to disable it. Crash recovery releases interrupted sessions; it never silently resumes them.","muted",true)); preferences->addWidget(settings);
     auto *diagnostics=new QPushButton("Open diagnostics"); diagnostics->setObjectName("diagnostics"); preferences->addWidget(diagnostics); preferences->addWidget(textLabel("Closing the window keeps a running session alive. End session and quit is available in the window menu.","muted",true)); preferences->addStretch();
     auto *aiPage=page();
-    aiPage->addWidget(textLabel("AI sessions","sectionTitle"));
+    aiPage->addWidget(textLabel("Terminal","sectionTitle"));
     aiPage->addWidget(textLabel("Open a real terminal attached to a session. It keeps running when you close this window.","muted",true));
     auto *newTerminal=new QPushButton("New terminal"); newTerminal->setObjectName("newTerminal");
     aiPage->addWidget(newTerminal);
