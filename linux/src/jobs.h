@@ -3,13 +3,18 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QList>
 #include <QObject>
 #include <QStringList>
 
 class QSocketNotifier;
 class QTimer;
+class QLocalServer;
+class QLocalSocket;
 
 namespace insomnia {
+QString jobSocketDirectory();
+QString jobSocketPath(const QString &id);
 struct JobSpec {
     QString name;
     QString command;
@@ -21,7 +26,7 @@ struct JobSpec {
 class JobManager final : public QObject {
     Q_OBJECT
 public:
-    explicit JobManager(QString stateDir, QString configDir = {}, QObject *parent = nullptr);
+    explicit JobManager(QString stateDir, QString configDir = {}, QObject *parent = nullptr, QString sockets = {});
     ~JobManager() override;
     JobManager(const JobManager &) = delete;
     JobManager &operator=(const JobManager &) = delete;
@@ -49,6 +54,10 @@ private:
         QByteArray ring;
         QSocketNotifier *notifier = nullptr;
         QTimer *killTimer = nullptr;
+        QLocalServer *attachServer = nullptr;
+        QList<QLocalSocket *> attachClients;
+        QHash<QLocalSocket *, QByteArray> attachBuffers;
+        QString socketPath;
     };
     QJsonObject snapshot(const Record &) const;
     QJsonObject fail(const QString &message) const;
@@ -60,7 +69,12 @@ private:
     void reap(Record &, bool killed);
     void closeMaster(Record &);
     void requestKill(Record &, int signal);
-    QString stateDir, configDir, journalPath;
+    void openAttach(Record &);
+    void closeAttach(Record &);
+    void acceptAttach(const QString &id);
+    void readAttach(const QString &id, QLocalSocket *client);
+    void resizeJob(Record &, int columns, int rows);
+    QString stateDir, configDir, journalPath, socketDir;
     int maxJobs = 8;
     qint64 logMaxBytes = 8LL * 1024 * 1024;
     bool arbitrary = false;

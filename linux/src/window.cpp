@@ -1,6 +1,10 @@
 #include "window.h"
 #include "core.h"
+#include "terminal.h"
 #include <QApplication>
+#include <QCoreApplication>
+#include <QDir>
+#include <QProcess>
 #include <QBoxLayout>
 #include <QCheckBox>
 #include <QCloseEvent>
@@ -317,9 +321,10 @@ Window::Window(Client c, bool demonstration, bool background)
     auto *jobRow=new QHBoxLayout; jobRow->setSpacing(8);
     jobStart=new QPushButton("Start AI session"); jobStart->setObjectName("jobStart");
     jobNewTerminal=new QPushButton("New terminal"); jobNewTerminal->setObjectName("jobNewTerminal");
+    jobOpenTerminal=new QPushButton("Open terminal"); jobOpenTerminal->setObjectName("jobOpenTerminal");
     jobStop=new QPushButton("Stop"); jobStop->setObjectName("jobStop");
     jobRefresh=new QPushButton("Refresh"); jobRefresh->setObjectName("jobRefresh");
-    jobRow->addWidget(jobStart); jobRow->addWidget(jobNewTerminal); jobRow->addWidget(jobStop); jobRow->addWidget(jobRefresh);
+    jobRow->addWidget(jobStart); jobRow->addWidget(jobNewTerminal); jobRow->addWidget(jobOpenTerminal); jobRow->addWidget(jobStop); jobRow->addWidget(jobRefresh);
     jobList=new QListWidget; jobList->setObjectName("jobList"); jobList->setAccessibleName("AI sessions"); jobList->setFixedHeight(72);
     jobLog=new QPlainTextEdit; jobLog->setObjectName("jobLog"); jobLog->setReadOnly(true); jobLog->setMaximumBlockCount(6000); jobLog->setAccessibleName("Terminal output"); jobLog->setFixedHeight(180);
     jobLog->setPlaceholderText("Start a terminal or an agent, then select its session here.");
@@ -345,7 +350,8 @@ Window::Window(Client c, bool demonstration, bool background)
         }
         perform("jobs.start", args);
     });
-    connect(jobNewTerminal,&QPushButton::clicked,this,[this]{ perform("jobs.start", {{"shell", true}}); });
+    connect(jobNewTerminal,&QPushButton::clicked,this,[this]{ openAfterStart=true; perform("jobs.start", {{"shell", true}}); });
+    connect(jobOpenTerminal,&QPushButton::clicked,this,[this]{ launchTerminal(selectedJob); });
     const auto sendInput=[this](const QString &data){
         if(selectedJob.isEmpty() || data.isEmpty()) return;
         perform("jobs.input", {{"id", selectedJob}, {"data", data}});
@@ -641,6 +647,7 @@ void Window::acceptReply(const QString &action, const QJsonObject &reply) {
             if (jobLog) jobLog->clear();
             if (jobInput) jobInput->setFocus();
             if (auto *area = findChild<QScrollArea *>("aiScroll")) area->ensureWidgetVisible(jobInput);
+            if (openAfterStart) { openAfterStart = false; launchTerminal(selectedJob); }
         }
         if (!selectedJob.isEmpty()) dispatch("jobs.log", {{"id", selectedJob}, {"offset", 0}});
         dispatch("jobs.list");
@@ -653,9 +660,14 @@ void Window::acceptReply(const QString &action, const QJsonObject &reply) {
         updateButtons();
     } else if (action == "jobs.list") {
         QString signature;
+        jobCwd.clear(); jobName.clear(); jobStatus.clear();
         for (const auto &value : reply.value("jobs").toArray()) {
             const auto job = value.toObject();
-            signature += job.value("id").toString() + ':' + job.value("status").toString() + ';';
+            const auto jobId = job.value("id").toString();
+            jobCwd.insert(jobId, job.value("cwd").toString());
+            jobName.insert(jobId, job.value("name").toString());
+            jobStatus.insert(jobId, job.value("status").toString());
+            signature += jobId + ':' + job.value("status").toString() + ';';
         }
         // Rebuild only when something changed, so polling never steals focus
         // or collapses the selection the user is working in.
@@ -711,6 +723,21 @@ void Window::acceptReply(const QString &action, const QJsonObject &reply) {
         dispatch(next, args);
     }
 }
+void Window::launchTerminal(const QString &id) {
+    if (id.isEmpty()) return;
+    const auto cwd = jobCwd.value(id, QDir::homePath());
+    const auto title = "EverEye · " + jobName.value(id, id);
+    const auto launch = terminalCommand(QCoreApplication::applicationFilePath(), {"attach", id}, cwd, title);
+    if (!launch.ok) {
+        localError = "No terminal emulator found. Run: evereye attach " + id;
+        render(current);
+        return;
+    }
+    if (!QProcess::startDetached(launch.program, launch.args, cwd)) {
+        localError = "Could not open " + launch.program;
+        render(current);
+    }
+}
 void Window::showDiagnostics(const QJsonObject &reply) {
     QDialog dialog(this); dialog.setWindowTitle("EverEye diagnostics"); dialog.resize(560, 440);
     auto *layout = new QVBoxLayout(&dialog); auto *text = new QTextEdit; text->setReadOnly(true); text->setPlainText(QString::fromUtf8(QJsonDocument(reply).toJson())); layout->addWidget(text);
@@ -743,8 +770,10 @@ void Window::updateButtons() {
     overviewStart->setText(working ? "Working…" : "Start session");
     if (jobStart) {
         const bool hasJob = !selectedJob.isEmpty();
+        const bool running = jobStatus.value(selectedJob) == "Running" || jobStatus.value(selectedJob) == "Starting";
         jobStart->setEnabled(connected && !working);
         jobNewTerminal->setEnabled(connected && !working);
+        jobOpenTerminal->setEnabled(connected && !working && hasJob && running);
         jobStop->setEnabled(connected && !working && hasJob);
         jobRefresh->setEnabled(connected && !working);
         jobCommand->setEnabled(connected && !working && jobPreset->currentData().toString().isEmpty());

@@ -10,7 +10,9 @@ start sessions from a phone.
 |---|---|
 | `evereye run` | Starts a job in a PTY owned by the controller; output is captured live. |
 | `evereye jobs send` | Writes keystrokes/commands to a running job's PTY. |
-| New terminal | Starts an interactive `$SHELL` job you can type into. |
+| `evereye attach` | Bridges this terminal's stdin/stdout to a running job's PTY. |
+| New terminal | Starts an interactive `$SHELL` job and opens a real terminal on it. |
+| Open terminal | Opens a real terminal emulator attached to the selected session. |
 | Controller (`evereye --daemon`) | Owns job state, logs, and the existing awake session. |
 | `evereye gateway` | Opt-in HTTP + SSE bridge to the controller over the user's session D-Bus. |
 | `mobile/` PWA | Installable phone client served by the gateway or hosted separately. |
@@ -31,10 +33,12 @@ cd linux
 ./evereye jobs
 ./evereye jobs log <id> -f
 ./evereye jobs send <id> "ls -la"
+./evereye attach <id>          # real terminal window attached to the job
 ./evereye jobs stop <id>
 
-# The AI sessions page has a terminal pane: New terminal starts an interactive
-# shell and the input box sends commands to whichever session is selected.
+# The AI sessions page has Open terminal / New terminal buttons. They launch
+# your terminal emulator running `evereye attach <id>`. The embedded pane and
+# input box stay available for a quick look or the phone.
 
 # Start an awake session so the laptop survives a closed lid
 ./evereye start 4h --lid
@@ -99,6 +103,25 @@ npm run test:e2e                 # Playwright against a mock gateway
 If the gateway finds `.../share/evereye/web/index.html` (user or system install) it serves the
 PWA at `/`, so the common case is same-origin. Install it from the browser's "Add to Home
 Screen". Open Settings and paste the gateway URL and token.
+
+## Real terminal window
+
+Each running job serves a local Unix socket at
+`$XDG_RUNTIME_DIR/evereye/jobs/<id>.sock` (mode 0600 in a 0700 directory).
+`evereye attach <id>` connects to it, switches its own terminal to raw mode,
+and bridges stdin/stdout to the job's PTY: keystrokes go to the process,
+output (including colours and full-screen redraws) goes to your terminal, and
+window resizes are forwarded with `TIOCSWINSZ` + `SIGWINCH`.
+
+- Closing the terminal or pressing its close button just **detaches**; the job
+  keeps running and remains visible in EverEye and the gateway.
+- Several terminals can attach to one job. The last resize wins and any viewer
+  can type, like tmux.
+- The connection is checked with `SO_PEERCRED`; only the same Unix user can
+  attach. No network listener is involved.
+- The UI picks the terminal in this order: `$TERMINAL`, `xdg-terminal-exec`,
+  then `foot`, `kitty`, `alacritty`, `wezterm`, `konsole`, `gnome-terminal`,
+  `xterm`. On this Omarchy setup `$TERMINAL=xdg-terminal-exec` resolves to foot.
 
 ## HTTP API
 

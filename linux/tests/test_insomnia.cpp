@@ -3,8 +3,12 @@
 #include "jobs.h"
 #include "platform.h"
 #include "service.h"
+#include "terminal.h"
 #include "window.h"
 #include <QApplication>
+#include <QElapsedTimer>
+#include <QLocalSocket>
+#include <QtEndian>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -157,6 +161,55 @@ private slots:
         QVERIFY2(sent.value("ok").toBool(), qPrintable(sent.value("error").toString()));
         QTRY_VERIFY_WITH_TIMEOUT(manager.log({{"id", id}, {"offset", 0}})["data"].toString().contains("ping"), 4000);
         manager.stop(id);
+    }
+    void attachBridgeEchoesAndDetaches() {
+        QTemporaryDir temp;
+        JobManager manager(temp.path() + "/jobs", temp.path() + "/config", nullptr, temp.path() + "/run");
+        const auto started = manager.start({{"command", "cat"}, {"cwd", temp.path()}});
+        QVERIFY2(started.value("ok").toBool(), qPrintable(started.value("error").toString()));
+        const auto id = started.value("id").toString();
+        QLocalSocket client;
+        client.connectToServer(temp.path() + "/run/" + id + ".sock");
+        QVERIFY(client.waitForConnected(3000));
+        QTest::qWait(50);  // let the controller accept the connection
+        const auto frame = [](quint8 type, const QByteArray &payload) {
+            QByteArray out; out.append(char(type));
+            char header[4]; qToBigEndian<quint32>(quint32(payload.size()), reinterpret_cast<uchar *>(header));
+            out.append(header, 4); out.append(payload); return out;
+        };
+        client.write(frame(1, "attach-hi\n"));
+        client.flush();
+        QByteArray received;
+        QElapsedTimer timer; timer.start();
+        while (!received.contains("attach-hi") && timer.elapsed() < 4000) {
+            QTest::qWait(20);
+            received += client.readAll();
+        }
+        QVERIFY2(received.contains("attach-hi"), received.constData());
+        client.disconnectFromServer();
+        QTRY_COMPARE(manager.get(id).value("status").toString(), QString("Running"));
+        manager.stop(id);
+    }
+    void terminalCommandPrefersConfiguredLauncher() {
+        const auto lookup = [](const QString &name) { return name == "xdg-terminal-exec" ? QString("/usr/bin/xdg-terminal-exec") : QString(); };
+        const auto launch = terminalCommand("/opt/evereye", {"attach", "abc"}, "/home/me", "EverEye · t", "xdg-terminal-exec", lookup);
+        QVERIFY(launch.ok);
+        QCOMPARE(launch.program, QString("/usr/bin/xdg-terminal-exec"));
+        QVERIFY(launch.args.contains("--dir=/home/me"));
+        QVERIFY(launch.args.contains("--title=EverEye · t"));
+        QVERIFY(launch.args.contains("/opt/evereye"));
+        QVERIFY(launch.args.contains("abc"));
+    }
+    void terminalCommandKnowsFootFlags() {
+        const auto lookup = [](const QString &name) { return name == "foot" ? QString("/usr/bin/foot") : QString(); };
+        const auto launch = terminalCommand("/opt/evereye", {"attach", "abc"}, "/home/me", "EverEye · t", "", lookup);
+        QVERIFY(launch.ok);
+        QCOMPARE(launch.program, QString("/usr/bin/foot"));
+        QCOMPARE(launch.args.mid(0, 4), (QStringList{"-T", "EverEye · t", "-D", "/home/me"}));
+    }
+    void terminalCommandReportsNoTerminal() {
+        const auto launch = terminalCommand("/opt/evereye", {"attach", "abc"}, "/home/me", "t", "", [](const QString &) { return QString(); });
+        QVERIFY(!launch.ok);
     }
     void jobsShellAcceptsTypedCommands() {
         QTemporaryDir temp;

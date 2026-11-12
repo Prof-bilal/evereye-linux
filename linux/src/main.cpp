@@ -1,6 +1,7 @@
 #include "core.h"
 #include "gateway.h"
 #include "guardian.h"
+#include "jobs.h"
 #include "platform.h"
 #include "service.h"
 #include "window.h"
@@ -9,7 +10,14 @@
 #include <QDBusMessage>
 #include <QDBusConnectionInterface>
 #include <QFileInfo>
+#include <QLocalSocket>
+#include <QScopeGuard>
+#include <QSocketNotifier>
 #include <QThread>
+#include <QtEndian>
+#include <fcntl.h>
+#include <termios.h>
+#include <sys/ioctl.h>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QTextStream>
@@ -59,15 +67,97 @@ static bool replaceUi(QDBusConnection &bus) {
 #endif
     return false;
 }
+static QByteArray attachFrame(quint8 type, const QByteArray &payload) {
+    QByteArray frame;
+    frame.append(char(type));
+    char header[4]; qToBigEndian<quint32>(quint32(payload.size()), reinterpret_cast<uchar *>(header));
+    frame.append(header, 4);
+    frame.append(payload);
+    return frame;
+}
+static int attachWinchWrite = -1;
+static void attachWinchHandler(int) { const char byte = 1; if (attachWinchWrite >= 0) (void)::write(attachWinchWrite, &byte, 1); }
+// Bridge this terminal's stdin/stdout to a running job's PTY over its socket.
+static int runAttach(const QString &id) {
+    if (id.isEmpty()) { QTextStream(stderr) << "Usage: evereye attach <id>\n"; return 2; }
+    QLocalSocket socket;
+    socket.connectToServer(jobSocketPath(id));
+    if (!socket.waitForConnected(2000)) {
+        QTextStream(stderr) << "Cannot attach to " << id << ": " << socket.errorString() << "\n";
+        return 1;
+    }
+    termios saved{};
+    bool raw = false;
+    if (::isatty(STDIN_FILENO) && ::tcgetattr(STDIN_FILENO, &saved) == 0) {
+        termios mode = saved;
+        ::cfmakeraw(&mode);
+        raw = ::tcsetattr(STDIN_FILENO, TCSANOW, &mode) == 0;
+    }
+    auto restore = qScopeGuard([&] { if (raw) ::tcsetattr(STDIN_FILENO, TCSANOW, &saved); });
+    (void)restore;
+    const auto sendSize = [&] {
+        winsize size{};
+        if (::ioctl(STDOUT_FILENO, TIOCGWINSZ, &size) != 0) return;
+        QByteArray payload(4, '\0');
+        qToBigEndian<quint16>(quint16(size.ws_col), reinterpret_cast<uchar *>(payload.data()));
+        qToBigEndian<quint16>(quint16(size.ws_row), reinterpret_cast<uchar *>(payload.data()) + 2);
+        socket.write(attachFrame(2, payload));
+        socket.flush();
+    };
+    sendSize();
+    QSocketNotifier input(STDIN_FILENO, QSocketNotifier::Read);
+    QObject::connect(&input, &QSocketNotifier::activated, [&] {
+        char buffer[4096];
+        const auto n = ::read(STDIN_FILENO, buffer, sizeof buffer);
+        if (n > 0) { socket.write(attachFrame(1, QByteArray(buffer, int(n)))); socket.flush(); }
+        else if (n == 0) { socket.disconnectFromServer(); QCoreApplication::quit(); }
+    });
+    QObject::connect(&socket, &QLocalSocket::readyRead, [&] {
+        const auto data = socket.readAll();
+        const char *cursor = data.constData();
+        qsizetype left = data.size();
+        while (left > 0) {
+            const auto n = ::write(STDOUT_FILENO, cursor, size_t(left));
+            if (n <= 0) break;
+            cursor += n; left -= n;
+        }
+    });
+    QObject::connect(&socket, &QLocalSocket::disconnected, [] { QCoreApplication::quit(); });
+    int winchPipe[2] = {-1, -1};
+    QSocketNotifier *winchNotifier = nullptr;
+    if (::pipe2(winchPipe, O_CLOEXEC | O_NONBLOCK) == 0) {
+        attachWinchWrite = winchPipe[1];
+        struct sigaction action{};
+        action.sa_handler = attachWinchHandler;
+        sigemptyset(&action.sa_mask);
+        action.sa_flags = SA_RESTART;
+        ::sigaction(SIGWINCH, &action, nullptr);
+        winchNotifier = new QSocketNotifier(winchPipe[0], QSocketNotifier::Read);
+        QObject::connect(winchNotifier, &QSocketNotifier::activated, [&] {
+            char drain[64];
+            while (::read(winchPipe[0], drain, sizeof drain) > 0) {}
+            sendSize();
+        });
+    }
+    if (socket.state() != QLocalSocket::ConnectedState) return 0;
+    const int result = QCoreApplication::exec();
+    attachWinchWrite = -1;
+    if (winchNotifier) { winchNotifier->setEnabled(false); delete winchNotifier; }
+    if (winchPipe[0] >= 0) ::close(winchPipe[0]);
+    if (winchPipe[1] >= 0) ::close(winchPipe[1]);
+    return result;
+}
 static int cli(const QStringList &args) {
     if (args.isEmpty() || args.first() == "--help" || args.first() == "help") {
-        QTextStream(stdout) << "EverEye 0.4.0\n\nUsage:\n  evereye                         Open controls and tray\n  evereye start 2h30m [--no-lid] [--no-power-saver]\n      [--battery-cutoff 10] [--power-saver-below 40]\n  evereye extend 15m\n  evereye status | end | shutdown | doctor\n  evereye run <preset> [--name N]\n  evereye run -- <command> [args...]\n  evereye jobs | jobs stop <id> | jobs log <id> [-f] [--offset N]\n  evereye jobs send <id> <text>\n  evereye tasks\n  evereye gateway [--bind 127.0.0.1] [--port 8737]\n  evereye --daemon                Run the controller in foreground\n  evereye --replace-ui            Reopen with this build; keep session\n  evereye --demo                  Preview without power changes\n  evereye --screenshot FILE.png   Render an offline UI preview\n\nDurations: seconds or d/h/m/s units; minimum 60s, maximum 30d.\n"; return 0;
+        QTextStream(stdout) << "EverEye 0.4.0\n\nUsage:\n  evereye                         Open controls and tray\n  evereye start 2h30m [--no-lid] [--no-power-saver]\n      [--battery-cutoff 10] [--power-saver-below 40]\n  evereye extend 15m\n  evereye status | end | shutdown | doctor\n  evereye run <preset> [--name N]\n  evereye run -- <command> [args...]\n  evereye jobs | jobs stop <id> | jobs log <id> [-f] [--offset N]\n  evereye jobs send <id> <text>\n  evereye attach <id>             Attach this terminal to a running session\n  evereye tasks\n  evereye gateway [--bind 127.0.0.1] [--port 8737]\n  evereye --daemon                Run the controller in foreground\n  evereye --replace-ui            Reopen with this build; keep session\n  evereye --demo                  Preview without power changes\n  evereye --screenshot FILE.png   Render an offline UI preview\n\nDurations: seconds or d/h/m/s units; minimum 60s, maximum 30d.\n"; return 0;
     }
     if (args.first() == "--version") { QTextStream(stdout) << "EverEye 0.4.0\n"; return 0; }
     const auto action = args.first();
     if (action == "--daemon" && args.size() == 1) return runService();
     if (action == "--watchdog" && args.size() == 1) return runGuardian();
     if (action == "gateway") return runGateway(args.mid(1));
+    if (action == "attach" && args.size() == 2) return runAttach(args[1]);
+    if (action == "attach" && args.size() != 2) { QTextStream(stderr) << "Usage: evereye attach <id>\n"; return 2; }
     if (action == "tasks" && args.size() == 1) {
         const auto result = callController("tasks.list"); output(result); return result.value("ok").toBool() ? 0 : 1;
     }

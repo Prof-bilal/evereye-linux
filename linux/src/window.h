@@ -1,5 +1,6 @@
 #pragma once
 #include <QWidget>
+#include <QHash>
 #include <QJsonObject>
 #include <QIcon>
 #include <functional>
@@ -34,6 +35,7 @@ private:
     void updateSelection();
     void showDiagnostics(const QJsonObject &);
     QString cleanTerminal(const QString &);
+    void launchTerminal(const QString &id);
     void selectPage(int);
     void toggleQuickPanel();
     void createQuickPanel();
@@ -84,12 +86,15 @@ private:
     QPushButton *jobStop = nullptr;
     QPushButton *jobRefresh = nullptr;
     QPushButton *jobNewTerminal = nullptr;
+    QPushButton *jobOpenTerminal = nullptr;
     QPushButton *jobSend = nullptr;
     QPushButton *jobCtrlC = nullptr;
     QLineEdit *jobInput = nullptr;
     QString selectedJob;
     QString jobSignature;
     QString terminalPending;
+    QHash<QString, QString> jobCwd, jobName, jobStatus;
+    bool openAfterStart = false;
     qint64 jobLogOffset = 0;
 };
 }

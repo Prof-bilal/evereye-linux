@@ -80,6 +80,7 @@ QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ctest -
 ./build/evereye jobs                   # list jobs and exit codes
 ./build/evereye jobs log <id> -f       # follow live output
 ./build/evereye jobs send <id> "ls"    # type into a running job
+./build/evereye attach <id>            # bridge a real terminal to the session
 ./build/evereye jobs stop <id>         # SIGTERM, then SIGKILL after 5s
 ./build/evereye tasks                  # list presets and whether arbitrary commands are allowed
 ./build/evereye gateway [--bind 127.0.0.1] [--port 8737]

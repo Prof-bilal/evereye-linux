@@ -6,10 +6,15 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QLocalServer>
+#include <QLocalSocket>
 #include <QSaveFile>
 #include <QSocketNotifier>
 #include <QTimer>
 #include <QUuid>
+#include <QtEndian>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
 #include <csignal>
 #include <cerrno>
 #include <cstring>
@@ -21,9 +26,22 @@
 #include <unistd.h>
 
 namespace insomnia {
+QString jobSocketDirectory() {
+    auto base = qEnvironmentVariable("XDG_RUNTIME_DIR");
+    if (base.isEmpty() || !QDir::isAbsolutePath(base)) {
+        auto state = qEnvironmentVariable("XDG_STATE_HOME");
+        if (state.isEmpty() || !QDir::isAbsolutePath(state)) state = QDir::homePath() + "/.local/state";
+        base = state + "/insomnia-linux";
+    }
+    return base + "/evereye/jobs";
+}
+QString jobSocketPath(const QString &id) { return jobSocketDirectory() + "/" + id + ".sock"; }
 namespace {
 constexpr int RingMax = 256 * 1024;
 constexpr int ChunkMax = 4096;
+constexpr quint8 FrameInput = 1;
+constexpr quint8 FrameResize = 2;
+constexpr int MaxAttachClients = 8;
 QString statusOf(int code, int signal, bool killed) {
     if (killed) return "Killed";
     if (signal) return "Failed";
@@ -35,13 +53,14 @@ QString jsonError(const QJsonParseError &e, const QString &path) {
 }
 }
 
-JobManager::JobManager(QString state, QString config, QObject *parent)
+JobManager::JobManager(QString state, QString config, QObject *parent, QString sockets)
     : QObject(parent), stateDir(std::move(state)), configDir(std::move(config)), journalPath(stateDir + "/jobs.json") {
     if (configDir.isEmpty()) {
         auto base = qEnvironmentVariable("XDG_CONFIG_HOME");
         if (base.isEmpty() || !QDir::isAbsolutePath(base)) base = QDir::homePath() + "/.config";
         configDir = base + "/evereye";
     }
+    socketDir = sockets.isEmpty() ? jobSocketDirectory() : std::move(sockets);
 }
 
 JobManager::~JobManager() {
@@ -224,7 +243,105 @@ QString JobManager::spawn(Record &job) {
         reap(current, current.status == "Killed");
     });
     job.notifier = notifier;
+    openAttach(job);
     return {};
+}
+
+void JobManager::openAttach(Record &job) {
+    if (!QDir().mkpath(socketDir)) return;
+    ::chmod(QFile::encodeName(socketDir).constData(), 0700);
+    job.socketPath = socketDir + "/" + job.id + ".sock";
+    QLocalServer::removeServer(job.socketPath);
+    auto *server = new QLocalServer(this);
+    server->setSocketOptions(QLocalServer::UserAccessOption);
+    if (!server->listen(job.socketPath)) {
+        server->deleteLater();
+        job.socketPath.clear();
+        return;
+    }
+    QFile::setPermissions(job.socketPath, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    job.attachServer = server;
+    const auto id = job.id;
+    QObject::connect(server, &QLocalServer::newConnection, this, [this, id] { acceptAttach(id); });
+}
+
+void JobManager::closeAttach(Record &job) {
+    for (auto *client : job.attachClients) {
+        client->disconnect(this);
+        client->abort();
+        client->deleteLater();
+    }
+    job.attachClients.clear();
+    job.attachBuffers.clear();
+    if (job.attachServer) {
+        job.attachServer->close();
+        job.attachServer->deleteLater();
+        job.attachServer = nullptr;
+    }
+    if (!job.socketPath.isEmpty()) {
+        QFile::remove(job.socketPath);
+        job.socketPath.clear();
+    }
+}
+
+void JobManager::acceptAttach(const QString &id) {
+    if (!records.contains(id)) return;
+    auto &job = records[id];
+    if (!job.attachServer) return;
+    while (auto *client = job.attachServer->nextPendingConnection()) {
+        struct ucred credential { 0, 0, 0 };
+        socklen_t length = sizeof credential;
+        const bool sameUser = ::getsockopt(client->socketDescriptor(), SOL_SOCKET, SO_PEERCRED, &credential, &length) == 0
+            && credential.uid == ::getuid();
+        if (!sameUser || job.attachClients.size() >= MaxAttachClients) {
+            client->abort();
+            client->deleteLater();
+            continue;
+        }
+        job.attachClients.append(client);
+        job.attachBuffers.insert(client, {});
+        // Replay recent output so the terminal opens with context, then stream.
+        if (!job.ring.isEmpty()) client->write(job.ring);
+        client->flush();
+        QObject::connect(client, &QLocalSocket::readyRead, this, [this, id, client] { readAttach(id, client); });
+        QObject::connect(client, &QLocalSocket::disconnected, this, [this, id, client] {
+            if (records.contains(id)) {
+                auto &record = records[id];
+                record.attachClients.removeAll(client);
+                record.attachBuffers.remove(client);
+            }
+            client->deleteLater();
+        });
+    }
+}
+
+void JobManager::readAttach(const QString &id, QLocalSocket *client) {
+    if (!records.contains(id)) return;
+    auto &job = records[id];
+    auto &buffer = job.attachBuffers[client];
+    buffer += client->readAll();
+    while (buffer.size() >= 5) {
+        const quint8 type = quint8(buffer.at(0));
+        const quint32 length = qFromBigEndian<quint32>(reinterpret_cast<const uchar *>(buffer.constData() + 1));
+        if (length > 65536) { client->abort(); return; }
+        if (buffer.size() < int(5 + length)) return;
+        const QByteArray payload = buffer.mid(5, int(length));
+        buffer.remove(0, int(5 + length));
+        if (type == FrameInput && job.masterFd >= 0) {
+            (void)::write(job.masterFd, payload.constData(), size_t(payload.size()));
+        } else if (type == FrameResize && payload.size() == 4 && job.masterFd >= 0) {
+            const auto *bytes = reinterpret_cast<const uchar *>(payload.constData());
+            resizeJob(job, (int(bytes[0]) << 8) | int(bytes[1]), (int(bytes[2]) << 8) | int(bytes[3]));
+        }
+    }
+}
+
+void JobManager::resizeJob(Record &job, int columns, int rows) {
+    if (job.masterFd < 0 || columns <= 0 || rows <= 0) return;
+    winsize size{};
+    size.ws_col = quint16(qMin(columns, 65535));
+    size.ws_row = quint16(qMin(rows, 65535));
+    if (::ioctl(job.masterFd, TIOCSWINSZ, &size) == 0 && job.pgid > 1) ::kill(pid_t(-job.pgid), SIGWINCH);
 }
 
 void JobManager::ingest(Record &job, const QByteArray &chunk) {
@@ -239,10 +356,12 @@ void JobManager::ingest(Record &job, const QByteArray &chunk) {
             log.close();
         }
     }
+    for (auto *client : job.attachClients) client->write(chunk);
     emit output(job.id, chunk.size() > ChunkMax ? chunk.left(ChunkMax) : chunk);
 }
 
 void JobManager::closeMaster(Record &job) {
+    closeAttach(job);
     if (job.notifier) { job.notifier->setEnabled(false); job.notifier->deleteLater(); job.notifier = nullptr; }
     if (job.killTimer) { job.killTimer->stop(); job.killTimer->deleteLater(); job.killTimer = nullptr; }
     if (job.masterFd >= 0) { ::close(job.masterFd); job.masterFd = -1; }

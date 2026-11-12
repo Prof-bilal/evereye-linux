@@ -7,6 +7,7 @@ Run this under a private bus so it never touches the live user session:
 """
 import json
 import os
+import select
 import socket
 import subprocess
 import sys
@@ -146,6 +147,23 @@ def live(tmp):
                     echoed_back = True
                     break
         check(echoed_back, "PTY echoes typed input")
+
+        attach = subprocess.Popen([str(binary), "attach", echo_id], stdin=subprocess.PIPE,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        attach.stdin.write(b"attach-cli\n")
+        attach.stdin.flush()
+        os.set_blocking(attach.stdout.fileno(), False)
+        imported = False
+        deadline = time.time() + 6
+        while time.time() < deadline:
+            readable, _, _ = select.select([attach.stdout], [], [], 0.2)
+            if readable and b"attach-cli" in os.read(attach.stdout.fileno(), 4096):
+                imported = True
+                break
+        attach.terminate()
+        attach.wait(timeout=5)
+        check(imported, "evereye attach bridges this terminal to the job")
+
         request(base + f"/api/jobs/{echo_id}/stop", token, "POST")
     finally:
         for process in (gateway, daemon):
