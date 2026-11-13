@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 type Config = { url: string; token: string };
 type Job = { id: string; name: string; status: string; exitCode: number; startedAt: number; endedAt: number; bytesTotal: number };
 type Task = { name: string; command?: string };
+type Agent = { pid: number; name: string; command: string; cwd: string };
 type Status = { ok?: boolean; active?: boolean; remainingSeconds?: number; batteryPercent?: number; reason?: string; error?: string; runningJobs?: number; [key: string]: unknown };
 
 const STORAGE = "evereye.mobile.config";
@@ -35,6 +36,7 @@ export default function Page() {
   const [editing, setEditing] = useState(false);
   const [status, setStatus] = useState<Status>({});
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [arbitrary, setArbitrary] = useState(false);
   const [selected, setSelected] = useState<string>("");
@@ -93,12 +95,14 @@ export default function Page() {
   const refresh = useCallback(async () => {
     if (!config) return;
     try {
-      const [nextStatus, nextJobs] = await Promise.all([
+      const [nextStatus, nextJobs, nextAgents] = await Promise.all([
         api("/api/status"),
         api("/api/jobs"),
+        api("/api/agents"),
       ]);
       setConnected(true);
       setStatus(nextStatus as Status);
+      setAgents((nextAgents.agents || []) as Agent[]);
       const list = (nextJobs.jobs || []) as Job[];
       setJobs(list);
       for (const job of list) {
@@ -334,6 +338,20 @@ export default function Page() {
           <button onClick={startTerminal} disabled={busy}>New terminal</button>
         </div>
         {!tasks.length ? <p className="muted small">Add presets in <code>~/.config/evereye/tasks.json</code>.</p> : null}
+      </section>
+
+      <section className="card">
+        <div className="row space"><span className="muted">AI PROCESSES ON THIS PC</span><span className="muted small">{agents.length}</span></div>
+        <ul className="jobs" role="list">
+          {agents.map((agent) => (
+            <li key={agent.pid} className="job static">
+              <span className="job-name">{agent.name}</span>
+              <span className="muted small mono">pid {agent.pid}</span>
+              <span className="muted small mono">{agent.cwd}</span>
+            </li>
+          ))}
+          {!agents.length ? <li className="muted small">No AI processes found.</li> : null}
+        </ul>
       </section>
 
       <section className="card">

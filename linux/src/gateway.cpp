@@ -217,6 +217,7 @@ private:
             writeJson(socket, 200, controller("jobs.start", args));
             return;
         }
+        if (path == "/api/agents" && method == "GET") { writeJson(socket, 200, controller("agents.list")); return; }
         if (path == "/api/tasks" && method == "GET") { writeJson(socket, 200, controller("tasks.list")); return; }
         if (path == "/api/session/end" && method == "POST") { writeJson(socket, 200, controller("end")); return; }
         if (path == "/api/session/extend" && method == "POST") {

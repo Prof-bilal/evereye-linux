@@ -69,6 +69,7 @@ const server = createServer(async (request, response) => {
     };
     if (url.pathname === "/api/status") return json(response, 200, status);
     if (url.pathname === "/api/tasks") return json(response, 200, { ok: true, tasks: [{ name: "claude" }], allowArbitraryCommands: false });
+    if (url.pathname === "/api/agents" && request.method === "GET") return json(response, 200, { ok: true, agents: [{ pid: 4242, name: "opencode", command: "opencode", cwd: "/home/me/project" }] });
     if (url.pathname === "/api/jobs" && request.method === "GET") return json(response, 200, { ok: true, jobs: state.jobs });
     if (url.pathname === "/api/session/end") { state.active = false; return json(response, 200, { ...status, active: false }); }
     if (url.pathname === "/api/session/extend") return json(response, 200, status);
