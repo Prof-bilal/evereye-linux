@@ -71,7 +71,7 @@ private:
     QBoxLayout *protections = nullptr;
     QWidget *sidebar = nullptr;
     QStackedWidget *pages = nullptr;
-    QComboBox *pagePicker = nullptr; QComboBox *extension = nullptr;
+    QComboBox *pagePicker = nullptr; QComboBox *agentPreset = nullptr; QComboBox *extension = nullptr;
     QLabel *breadcrumb = nullptr;
     QLabel *endsAt = nullptr; QLabel *batterySummary = nullptr; QLabel *lidSummary = nullptr; QLabel *recoverySummary = nullptr;
     QLabel *temperatureSummary = nullptr;

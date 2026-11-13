@@ -15,7 +15,7 @@ namespace {
 QStringList defaultPatterns() {
     return {"claude", "codex", "aider", "opencode", "gemini", "goose", "cline",
             "cursor-agent", "copilot", "crush", "amp", "command-code", "commandcode",
-            "windsurf", "continue", "qwen"};
+            "windsurf", "continue", "qwen", "freebuff"};
 }
 QStringList patterns() {
     QStringList result = defaultPatterns();
@@ -122,11 +122,15 @@ QJsonObject scanAgents() {
         const auto command = parent.command.toLower();
         if (command.contains("evereye") || command.contains("insomnia-linux")) continue;
         QString matched;
-        for (const auto &token : parent.tokens) {
-            const auto base = QFileInfo(token).fileName().toLower();
+        // Windows-style binaries (opencode.exe) match by their bare name.
+        const auto bare = [](QString name) { name = name.toLower(); return name.endsWith(".exe") ? name.chopped(4) : name; };
+        // v1 is for terminal agents: match the executable (or the script a runtime launches), not any argument.
+        if (command.contains("claude-desktop") || command.contains("/.config/claude/")) continue;
+        for (int i = 0; i < parent.tokens.size() && i < 2; ++i) {
+            const auto base = bare(QFileInfo(parent.tokens[i]).fileName());
             if (wanted.contains(base)) { matched = base; break; }
         }
-        if (matched.isEmpty() && wanted.contains(parent.comm.toLower())) matched = parent.comm.toLower();
+        if (matched.isEmpty() && wanted.contains(bare(parent.comm))) matched = bare(parent.comm);
         if (matched.isEmpty()) continue;
         const auto pane = paneFor(parent, processes);
         // Background helper daemons are not sessions you watch or task.
